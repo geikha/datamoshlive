@@ -1,0 +1,22 @@
+{
+  "name": "datamoshlive",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Real-time datamosh effect via WebCodecs VP8",
+  "main": "dist/datamoshlive.js",
+  "module": "dist/datamoshlive.esm.js",
+  "exports": {
+    ".": {
+      "import": "./dist/datamoshlive.esm.js",
+      "default": "./dist/datamoshlive.js"
+    }
+  },
+  "scripts": {
+    "build": "rollup -c",
+    "dev":   "rollup -c --watch",
+    "serve": "npx serve -p 3003 ."
+  },
+  "devDependencies": {
+    "rollup": "^4.0.0"
+  }
+}
