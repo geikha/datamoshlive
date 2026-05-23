@@ -56,20 +56,20 @@ export default class DatamoshInput {
   }
 
   setCamera(video, stream) {
-    this._stopCamera();
+    this._releaseSource();
     this._source = video;
     this._type   = 'camera';
     this._cameraStream = stream;
   }
 
   setVideo(video) {
-    this._stopCamera();
+    this._releaseSource();
     this._source = video;
     this._type   = 'video';
   }
 
   setCanvas(canvas) {
-    this._stopCamera();
+    this._releaseSource();
     this._source = canvas;
     this._type   = 'canvas';
   }
@@ -80,6 +80,20 @@ export default class DatamoshInput {
     return drawFit(ctx, this._source, w, h, this._fit);
   }
 
+  // Pause and detach any playing video/camera source, then stop camera tracks.
+  _releaseSource() {
+    if (this._source && (this._type === 'camera' || this._type === 'video')) {
+      try {
+        this._source.pause();
+        this._source.srcObject = null;
+        this._source.src = '';
+      } catch (_) {}
+    }
+    this._stopCamera();
+    this._source = null;
+    this._type   = null;
+  }
+
   _stopCamera() {
     if (this._cameraStream) {
       this._cameraStream.getTracks().forEach(t => t.stop());
@@ -88,7 +102,6 @@ export default class DatamoshInput {
   }
 
   destroy() {
-    this._stopCamera();
-    this._source = null;
+    this._releaseSource();
   }
 }

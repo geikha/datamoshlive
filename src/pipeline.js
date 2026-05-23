@@ -29,10 +29,8 @@ export { PARAM_CONFIG, resolveParam };
 const PARAM_CONFIG = {
   speed:         { default: 2,        type: 'number', integer: true, min: 1 },
   enabled:       { default: true,     type: 'boolean' },
-  autoSmear:     { default: false,    type: 'boolean' },
-  smearRate:     { default: 0.5,      type: 'number', min: 0, max: 1 },
-  autoCorrupt:   { default: false,    type: 'boolean' },
-  corruptRate:   { default: 0.5,      type: 'number', min: 0, max: 1 },
+  smearRate:     { default: 0,        type: 'number', min: 0, max: 1 },
+  corruptRate:   { default: 0,        type: 'number', min: 0, max: 1 },
   corruptAmount: { default: 0.3,      type: 'number', min: 0, max: 1 },
   hold:          { default: false,    type: 'boolean' },
   bitrate:       { default: 1_000_000, type: 'number', min: 1 },
@@ -208,9 +206,10 @@ export default class DatamoshPipeline {
         return;
       }
 
-      // autoSmear: probabilistic continuous drop.
+      // smearRate > 0: continuous probabilistic keyframe dropping.
+      const smearRate = resolveParam(this._params.smearRate, 'smearRate');
       const shouldDrop = this._dropNextKeyFrame ||
-        (resolveParam(this._params.autoSmear, 'autoSmear') && Math.random() < resolveParam(this._params.smearRate, 'smearRate'));
+        (smearRate > 0 && Math.random() < smearRate);
       if (shouldDrop) {
         this._dropNextKeyFrame = false;
         return;
@@ -234,12 +233,15 @@ export default class DatamoshPipeline {
     }
 
     let outChunk = chunk;
+    const corruptRate   = resolveParam(this._params.corruptRate,   'corruptRate');
+    const corruptAmount = resolveParam(this._params.corruptAmount, 'corruptAmount');
+
     if (this._corruptNext) {
       this._corruptNext = false;
-      outChunk = this._corruptChunk(chunk, resolveParam(this._params.corruptAmount, 'corruptAmount'));
+      outChunk = this._corruptChunk(chunk, corruptAmount);
       this._recoverAfterDeltas = Math.max(this._recoverAfterDeltas, 30);
-    } else if (resolveParam(this._params.autoCorrupt, 'autoCorrupt') && Math.random() < resolveParam(this._params.corruptRate, 'corruptRate')) {
-      outChunk = this._corruptChunk(chunk, resolveParam(this._params.corruptAmount, 'corruptAmount'));
+    } else if (corruptRate > 0 && Math.random() < corruptRate) {
+      outChunk = this._corruptChunk(chunk, corruptAmount);
       this._recoverAfterDeltas = Math.max(this._recoverAfterDeltas, 30);
     }
 
