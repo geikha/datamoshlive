@@ -705,7 +705,7 @@ var DatamoshLive = (function () {
     set corruptAmount(v) { this.params.corruptAmount = Math.max(0, Math.min(1, v)); }
 
     get hold()           { return this.params.hold; }
-    set hold(v)          { this.params.hold = !!v; }
+    set hold(v)          { this.params.hold = v; }
 
     get bitrate()        { return this.params.bitrate; }
     set bitrate(v)       { this.setParam('bitrate', v); }
