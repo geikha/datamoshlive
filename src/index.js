@@ -226,9 +226,6 @@ export default class DatamoshLive {
   get smearRate()      { return this.params.smearRate; }
   set smearRate(v)     { this.params.smearRate = Math.max(0, Math.min(1, v)); }
 
-  get autoCorrupt()    { return this.params.autoCorrupt; }
-  set autoCorrupt(v)   { this.params.autoCorrupt = !!v; }
-
   /**
    * Probability (0–1) that a delta frame is corrupted each cycle.
    * Set to 0 to disable continuous corruption.

@@ -148,26 +148,16 @@
 
     <div class="section-label">Smear — keyframe drop</div>
 
-    <label>
-      <span>auto smear</span>
-      <input type="checkbox" id="ctrl-auto-smear" />
-    </label>
-
-    <label id="label-smear-rate">
-      <span>smear rate <span class="val" id="val-smear-rate">50</span>%</span>
-      <input type="range" id="ctrl-smear-rate" min="0" max="100" step="1" value="50" />
+    <label id="label-smear-rate" class="full-row">
+      <span>smear rate <span class="val" id="val-smear-rate">0</span>%</span>
+      <input type="range" id="ctrl-smear-rate" min="0" max="100" step="1" value="0" />
     </label>
 
     <div class="section-label">Corrupt — packet loss</div>
 
-    <label>
-      <span>auto corrupt</span>
-      <input type="checkbox" id="ctrl-auto-corrupt" />
-    </label>
-
-    <label id="label-corrupt-rate">
-      <span>corrupt rate <span class="val" id="val-corrupt-rate">50</span>%</span>
-      <input type="range" id="ctrl-corrupt-rate" min="0" max="100" step="1" value="50" />
+    <label id="label-corrupt-rate" class="full-row">
+      <span>corrupt rate <span class="val" id="val-corrupt-rate">0</span>%</span>
+      <input type="range" id="ctrl-corrupt-rate" min="0" max="100" step="1" value="0" />
     </label>
 
     <label id="label-corrupt-amount" class="full-row">
@@ -230,7 +220,7 @@
     const dm = new DatamoshLive({ renderWidth: 640, renderHeight: 480 });
     document.getElementById('canvas-wrap').appendChild(dm.canvas);
 
-    dm.setFPS(parseInt(document.getElementById('ctrl-fps').value, 10));
+    dm.fps = parseInt(document.getElementById('ctrl-fps').value, 10);
 
     // ---- Source ----
 
@@ -295,14 +285,6 @@
 
     // ---- Smear ----
 
-    const smearRateLabel = document.getElementById('label-smear-rate');
-    smearRateLabel.classList.add('dim');
-
-    document.getElementById('ctrl-auto-smear').addEventListener('change', (e) => {
-      dm.autoSmear = e.target.checked;
-      smearRateLabel.classList.toggle('dim', !e.target.checked);
-    });
-
     document.getElementById('ctrl-smear-rate').addEventListener('input', (e) => {
       const v = parseInt(e.target.value, 10);
       dm.smearRate = v / 100;
@@ -310,17 +292,6 @@
     });
 
     // ---- Corrupt ----
-
-    const corruptRateLabel   = document.getElementById('label-corrupt-rate');
-    const corruptAmountLabel = document.getElementById('label-corrupt-amount');
-    corruptRateLabel.classList.add('dim');
-    corruptAmountLabel.classList.add('dim');
-
-    document.getElementById('ctrl-auto-corrupt').addEventListener('change', (e) => {
-      dm.autoCorrupt = e.target.checked;
-      corruptRateLabel.classList.toggle('dim', !e.target.checked);
-      corruptAmountLabel.classList.toggle('dim', !e.target.checked);
-    });
 
     document.getElementById('ctrl-corrupt-rate').addEventListener('input', (e) => {
       const v = parseInt(e.target.value, 10);
@@ -361,7 +332,7 @@
     function applyRenderSize() {
       const w = parseInt(document.getElementById('ctrl-render-w').value, 10);
       const h = parseInt(document.getElementById('ctrl-render-h').value, 10);
-      if (w > 0 && h > 0) dm.setRenderSize(w, h);
+      if (w > 0 && h > 0) dm.setResolution(w, h);
     }
     document.getElementById('ctrl-render-w').addEventListener('change', applyRenderSize);
     document.getElementById('ctrl-render-h').addEventListener('change', applyRenderSize);
@@ -371,7 +342,7 @@
     function applyDisplaySize() {
       const w = parseInt(document.getElementById('ctrl-display-w').value, 10);
       const h = parseInt(document.getElementById('ctrl-display-h').value, 10);
-      if (w > 0 && h > 0) dm.setDisplaySize(w, h);
+      if (w > 0 && h > 0) dm.resizeCanvas(w, h);
     }
     document.getElementById('ctrl-display-w').addEventListener('change', applyDisplaySize);
     document.getElementById('ctrl-display-h').addEventListener('change', applyDisplaySize);
@@ -380,7 +351,7 @@
 
     document.getElementById('ctrl-fps').addEventListener('input', (e) => {
       const v = parseInt(e.target.value, 10);
-      dm.setFPS(v);
+      dm.fps = v;
       document.getElementById('val-fps').textContent = v === 0 ? 'unlimited' : v;
     });
   </script>
