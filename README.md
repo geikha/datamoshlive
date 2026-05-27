@@ -56,6 +56,8 @@ const dm = new DatamoshLive(opts)
 
 ## Source methods
 
+All init methods are async and awaitable.
+
 ### `await dm.initCamera(opts?)`
 Opens the webcam and starts the loop. Returns the internal `<video>` element.
 - `opts.constraints` — MediaStreamConstraints (default: ideal render size)
@@ -66,7 +68,7 @@ Load a video file URL or an existing `<video>` element.
 - `source` — URL string or `HTMLVideoElement`
 - `opts.autoStart` — default `true`
 
-### `dm.initCanvas(canvas, opts?)`
+### `await dm.initCanvas(canvas, opts?)`
 Use any `HTMLCanvasElement` as a live source (e.g. another generative sketch).
 
 ---
@@ -74,7 +76,7 @@ Use any `HTMLCanvasElement` as a live source (e.g. another generative sketch).
 ## Loop control
 
 ### `dm.start()`
-Begin the capture/encode/decode loop.
+Begin the capture/encode/decode loop. Safe to call while already running — resets timing and syncs the pipeline to a clean state. Use this after swapping sources or changing settings.
 
 ### `dm.stop()`
 Pause the loop. Call `start()` to resume.
@@ -105,9 +107,8 @@ dm.speed = 5;
 // Live — called each frame
 dm.speed = () => Math.sin(Date.now() / 1000) * 3 + 2;
 
-// Booleans from truthy/falsy, numbers from expressions
-dm.autoSmear = () => Math.random() < 0.1;
-dm.smearRate = () => (Date.now() % 1000) / 1000;
+// Smear rate as a live expression (0 = off, >0 = on)
+dm.smearRate = () => Math.abs(Math.sin(Date.now() / 2000));
 ```
 
 Functions receive **automatic type coercion** and **bounds clamping**:
@@ -135,17 +136,13 @@ Set directly as properties or via `setParam(name, value)` / `setParams({...})`.
 
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `dm.autoSmear` | `boolean` | `false` | Continuously drop keyframes at random, creating persistent smear |
-| `dm.smearRate` | `number` | `0.5` | Probability (0–1) a keyframe is dropped per keyframe event when `autoSmear` is on |
-
-Keyframes are forced every 60 frames when `autoSmear` is on, so there are frames to drop.
+| `dm.smearRate` | `number` | `0` | Probability (0–1) a keyframe is dropped each cycle. **`0` = off**, `>0` = continuous smearing enabled. Keyframes are forced every 60 frames while active |
 
 ### Corrupt — payload corruption
 
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `dm.autoCorrupt` | `boolean` | `false` | Continuously corrupt delta frames at random |
-| `dm.corruptRate` | `number` | `0.5` | Probability (0–1) a delta frame is corrupted per frame when `autoCorrupt` is on |
+| `dm.corruptRate` | `number` | `0` | Probability (0–1) a delta frame is corrupted each cycle. **`0` = off**, `>0` = continuous corruption enabled |
 | `dm.corruptAmount` | `number` | `0.3` | Fraction (0–1) of the frame's byte payload to zero out per corruption event |
 
 The first ~10 bytes of each frame are preserved to reduce hard decoder crashes. The decoder auto-reinitialises if it enters an error state.
@@ -172,16 +169,13 @@ Changing `bitrate` or `codec` resets the encoder/decoder pair.
 
 ## Size methods
 
-### `dm.setRenderSize(width, height)`
+### `dm.setResolution(width, height)`
 Change the encoder/decoder resolution. Resets the codec pipeline. H.264 AVC level recalculates automatically.
 
 Shorthand: `dm.width = 800; dm.height = 600;`
 
-### `dm.setDisplaySize(width, height)`
+### `dm.resizeCanvas(width, height)`
 Resize the output canvas. Does not reset the codec — decoded frames are just drawn at a different scale.
-
-### `dm.setFPS(fps)`
-Set the capture frame rate limit. `0` = run as fast as `requestAnimationFrame` allows.
 
 ---
 
@@ -209,12 +203,11 @@ await dm.initCamera();
 // Speed follows sine wave
 dm.speed = () => Math.sin(Date.now() / 1000) * 8 + 8;
 
-// Pulsing smear rate
-dm.autoSmear = true;
+// Pulsing smear rate (0 = off, so this pulses on and off)
 dm.smearRate = () => Math.abs(Math.sin(Date.now() / 2000));
 
 // Beat-synced corruption (on odd seconds)
-dm.autoCorrupt = () => (Math.floor(Date.now() / 1000) % 2) === 1;
+dm.corruptRate = () => (Math.floor(Date.now() / 1000) % 2) === 1 ? 0.8 : 0;
 dm.corruptAmount = () => Math.random() * 0.5;
 
 // Time-based hold (freeze for 500ms every 2s)
