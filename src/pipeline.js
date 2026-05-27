@@ -19,8 +19,15 @@ const CODEC_MAP = {
   h264: 'avc1.42001E',
 };
 
-export function resolveCodec(name) {
-  return CODEC_MAP[name] || name;
+export function resolveCodec(name, fallback = 'vp8') {
+  const mapped = CODEC_MAP[name];
+  if (mapped) return mapped;
+
+  // If not in map, validate it's a known codec string (vp8, vp9, or h26x variant)
+  if (/^(vp8|vp09|avc1)/.test(name)) return name;
+
+  console.warn(`DatamoshLive: unknown codec "${name}", falling back to previous codec`);
+  return fallback;
 }
 
 export { PARAM_CONFIG, resolveParam };
@@ -105,6 +112,7 @@ export default class DatamoshPipeline {
       codec = getH264CodecString(this._width, this._height);
     }
     this._codec = codec;
+    this._lastValidCodec = codec;
     this._encoder = null;
     this._decoder = null;
     this._nextKeyFrame        = true;
@@ -114,7 +122,7 @@ export default class DatamoshPipeline {
     this._smearPending        = false;
     this._recoverAfterDeltas  = 0;
     this._corruptNext         = false;
-    this._holding      = !!this._params.hold;
+    this._holding      = false;
     this._waitForDelta = false;
     this._init();
   }
@@ -162,7 +170,7 @@ export default class DatamoshPipeline {
     this._smearPending        = false;
     this._recoverAfterDeltas  = 0;
     this._corruptNext         = false;
-    this._holding      = !!this._params.hold;
+    this._holding      = false;
     this._waitForDelta = false;
   }
 
@@ -326,15 +334,17 @@ export default class DatamoshPipeline {
     }
     if (bitrate != null) this._bitrate = Math.max(1, bitrate);
     if (codec   != null) {
-      let resolved = resolveCodec(codec);
+      let resolved = resolveCodec(codec, this._lastValidCodec);
       // For H.264, recalculate AVC level based on new resolution.
       if (resolved.startsWith('avc')) {
         resolved = getH264CodecString(this._width, this._height);
       }
       this._codec = resolved;
+      this._lastValidCodec = resolved;
     } else if (resolutionChanged && this._codec.startsWith('avc')) {
       // Resolution changed while using H.264 — recalculate appropriate AVC level.
       this._codec = getH264CodecString(this._width, this._height);
+      this._lastValidCodec = this._codec;
     }
     try { if (this._encoder?.state !== 'closed') this._encoder.close(); } catch (_) {}
     try { if (this._decoder?.state !== 'closed') this._decoder.close(); } catch (_) {}

@@ -203,7 +203,7 @@ export default class DatamoshLive {
   set autoCorrupt(v)   { this.params.autoCorrupt = !!v; }
 
   get hold()            { return this.params.hold; }
-  set hold(v)          { this.params.hold = !!v; }
+  set hold(v)          { this.params.hold = v; }
 
   get corruptRate()    { return this.params.corruptRate; }
   set corruptRate(v)   { this.params.corruptRate = Math.max(0, Math.min(1, v)); }
