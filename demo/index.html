@@ -184,23 +184,23 @@
     <div class="section-label">Render size <small style="color:#555;font-size:0.7rem;">(encoder / processing)</small></div>
 
     <label>
-      <span>render width</span>
-      <input type="number" id="ctrl-render-w" min="1" value="640" />
+      <span>width</span>
+      <input type="number" id="ctrl-width" min="1" value="640" />
     </label>
     <label>
-      <span>render height</span>
-      <input type="number" id="ctrl-render-h" min="1" value="480" />
+      <span>height</span>
+      <input type="number" id="ctrl-height" min="1" value="480" />
     </label>
 
-    <div class="section-label">Display size <small style="color:#555;font-size:0.7rem;">(output canvas)</small></div>
+    <div class="section-label">Canvas size <small style="color:#555;font-size:0.7rem;">(output canvas)</small></div>
 
     <label>
-      <span>display width</span>
-      <input type="number" id="ctrl-display-w" min="1" value="640" />
+      <span>canvas width</span>
+      <input type="number" id="ctrl-canvas-w" min="1" value="640" />
     </label>
     <label>
-      <span>display height</span>
-      <input type="number" id="ctrl-display-h" min="1" value="480" />
+      <span>canvas height</span>
+      <input type="number" id="ctrl-canvas-h" min="1" value="480" />
     </label>
 
     <div class="section-label">Timing</div>
@@ -217,7 +217,7 @@
       document.getElementById('warn-no-webcodecs').style.display = 'block';
     }
 
-    const dm = new DatamoshLive({ renderWidth: 640, renderHeight: 480 });
+    const dm = new DatamoshLive({ width: 640, height: 480 });
     document.getElementById('canvas-wrap').appendChild(dm.canvas);
 
     dm.fps = parseInt(document.getElementById('ctrl-fps').value, 10);
@@ -330,22 +330,22 @@
     // ---- Render size ----
 
     function applyRenderSize() {
-      const w = parseInt(document.getElementById('ctrl-render-w').value, 10);
-      const h = parseInt(document.getElementById('ctrl-render-h').value, 10);
+      const w = parseInt(document.getElementById('ctrl-width').value, 10);
+      const h = parseInt(document.getElementById('ctrl-height').value, 10);
       if (w > 0 && h > 0) dm.setResolution(w, h);
     }
-    document.getElementById('ctrl-render-w').addEventListener('change', applyRenderSize);
-    document.getElementById('ctrl-render-h').addEventListener('change', applyRenderSize);
+    document.getElementById('ctrl-width').addEventListener('change', applyRenderSize);
+    document.getElementById('ctrl-height').addEventListener('change', applyRenderSize);
 
-    // ---- Display size ----
+    // ---- Canvas size ----
 
-    function applyDisplaySize() {
-      const w = parseInt(document.getElementById('ctrl-display-w').value, 10);
-      const h = parseInt(document.getElementById('ctrl-display-h').value, 10);
+    function applyCanvasSize() {
+      const w = parseInt(document.getElementById('ctrl-canvas-w').value, 10);
+      const h = parseInt(document.getElementById('ctrl-canvas-h').value, 10);
       if (w > 0 && h > 0) dm.resizeCanvas(w, h);
     }
-    document.getElementById('ctrl-display-w').addEventListener('change', applyDisplaySize);
-    document.getElementById('ctrl-display-h').addEventListener('change', applyDisplaySize);
+    document.getElementById('ctrl-canvas-w').addEventListener('change', applyCanvasSize);
+    document.getElementById('ctrl-canvas-h').addEventListener('change', applyCanvasSize);
 
     // ---- FPS ----
 

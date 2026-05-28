@@ -22,7 +22,7 @@ npm run serve   # static server on :3003
 ```html
 <script src="dist/datamoshlive.js"></script>
 <script>
-  const dm = new DatamoshLive({ renderWidth: 640, renderHeight: 480 });
+  const dm = new DatamoshLive({ width: 640, height: 480 });
   document.body.appendChild(dm.canvas);
   await dm.initCamera();   // starts automatically
 </script>
@@ -43,10 +43,10 @@ const dm = new DatamoshLive(opts)
 
 | Option | Default | Description |
 |---|---|---|
-| `renderWidth` | `640` | Encoder/decoder resolution (processing size) |
-| `renderHeight` | `480` | Encoder/decoder resolution (processing size) |
-| `displayWidth` | `renderWidth` | Output canvas width (can differ from render) |
-| `displayHeight` | `renderHeight` | Output canvas height |
+| `width` | `640` | Encoder/decoder resolution (processing size) |
+| `height` | `480` | Encoder/decoder resolution (processing size) |
+| `canvasWidth` | `width` | Output canvas width (can differ from render) |
+| `canvasHeight` | `height` | Output canvas height |
 | `canvas` | `createElement('canvas')` | Bring your own canvas element |
 | `params` | `{}` | Initial parameter overrides (see Parameters) |
 
@@ -196,7 +196,7 @@ Stops the loop, removes the canvas, and closes the encoder/decoder.
 
 ```js
 // Camera with oscillating smear
-const dm = new DatamoshLive({ renderWidth: 320, renderHeight: 240 });
+const dm = new DatamoshLive({ width: 320, height: 240 });
 document.body.appendChild(dm.canvas);
 await dm.initCamera();
 

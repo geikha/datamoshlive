@@ -1,7 +1,7 @@
 /**
  * DatamoshLive — Real-time datamosh effect using WebCodecs (VP8 / VP9 / H.264).
  *
- *   const dm = new DatamoshLive({ renderWidth: 640, renderHeight: 480 });
+ *   const dm = new DatamoshLive({ width: 640, height: 480 });
  *   await dm.initCamera();
  *   dm.smear();        // one-shot smear, auto-recovers
  *   dm.smearRate = 0.5 // continuous probabilistic smearing (0 = off)
@@ -29,21 +29,21 @@ const QUEUE_OVERLOAD_FACTOR = 2;
 export default class DatamoshLive {
   /**
    * @param {Object} opts
-   * @param {number}  [opts.renderWidth=640]   - Encoder / processing width
-   * @param {number}  [opts.renderHeight=480]  - Encoder / processing height
-   * @param {number}  [opts.displayWidth]      - Output canvas width  (defaults to renderWidth)
-   * @param {number}  [opts.displayHeight]     - Output canvas height (defaults to renderHeight)
+   * @param {number}  [opts.width=640]         - Encoder / processing width
+   * @param {number}  [opts.height=480]        - Encoder / processing height
+   * @param {number}  [opts.canvasWidth]       - Output canvas width  (defaults to width)
+   * @param {number}  [opts.canvasHeight]      - Output canvas height (defaults to height)
    * @param {HTMLCanvasElement} [opts.canvas]  - Existing canvas element to use
    * @param {Object}  [opts.params]            - Initial parameter overrides
    */
   constructor(opts = {}) {
-    const rw = opts.renderWidth  || opts.width  || 640;
-    const rh = opts.renderHeight || opts.height || 480;
+    const w = opts.width  || 640;
+    const h = opts.height || 480;
 
-    this.renderWidth  = rw;
-    this.renderHeight = rh;
-    this.displayWidth  = opts.displayWidth  || rw;
-    this.displayHeight = opts.displayHeight || rh;
+    this.width  = w;
+    this.height = h;
+    this.canvasWidth  = opts.canvasWidth  || w;
+    this.canvasHeight = opts.canvasHeight || h;
 
     this._looping       = false;
     this._rafId         = null;
@@ -56,25 +56,25 @@ export default class DatamoshLive {
     this.params = { ...DEFAULT_PARAMS, ...(opts.params || {}) };
 
     this.canvas = opts.canvas || document.createElement('canvas');
-    this.canvas.width  = this.displayWidth;
-    this.canvas.height = this.displayHeight;
+    this.canvas.width  = this.canvasWidth;
+    this.canvas.height = this.canvasHeight;
     this._ctx = this.canvas.getContext('2d');
 
     this._offscreen       = document.createElement('canvas');
-    this._offscreen.width  = this.renderWidth;
-    this._offscreen.height = this.renderHeight;
+    this._offscreen.width  = this.width;
+    this._offscreen.height = this.height;
     this._offscreenCtx    = this._offscreen.getContext('2d');
 
     this._input = new DatamoshInput();
 
     this._pipeline = new DatamoshPipeline({
-      width:   this.renderWidth,
-      height:  this.renderHeight,
+      width:   this.width,
+      height:  this.height,
       bitrate: this.params.bitrate,
       codec:   this.params.codec,
       params:  this.params,
       onFrame: (frame) => {
-        this._ctx.drawImage(frame, 0, 0, this.displayWidth, this.displayHeight);
+        this._ctx.drawImage(frame, 0, 0, this.canvasWidth, this.canvasHeight);
       },
     });
   }
@@ -86,7 +86,7 @@ export default class DatamoshLive {
 
     const enabled = this._resolveParam('enabled');
     if (!enabled) {
-      this._input.capture(this._ctx, this.displayWidth, this.displayHeight);
+      this._input.capture(this._ctx, this.canvasWidth, this.canvasHeight);
       return;
     }
 
@@ -106,7 +106,7 @@ export default class DatamoshLive {
       this._pipeline.requestKeyFrame();
     }
 
-    const drawn = this._input.capture(this._offscreenCtx, this.renderWidth, this.renderHeight);
+    const drawn = this._input.capture(this._offscreenCtx, this.width, this.height);
     if (!drawn) return;
 
     if (this._pipeline._encoder?.state === 'closed') return;
@@ -129,7 +129,7 @@ export default class DatamoshLive {
   async initCamera(opts = {}) {
     try {
       const constraints = opts.constraints || {
-        video: { width: { ideal: this.renderWidth }, height: { ideal: this.renderHeight } },
+        video: { width: { ideal: this.width }, height: { ideal: this.height } },
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       const video  = document.createElement('video');
@@ -254,11 +254,6 @@ export default class DatamoshLive {
     this._frameInterval = this._fps > 0 ? 1000 / this._fps : 0;
   }
 
-  get width()          { return this.renderWidth; }
-  set width(v)         { this.setResolution(v, this.renderHeight); }
-
-  get height()         { return this.renderHeight; }
-  set height(v)        { this.setResolution(this.renderWidth, v); }
 
   // Force keyframe + deliver it → clean sync, cancels any pending smear.
   sync()    { this._pipeline.sync(); }
@@ -274,9 +269,9 @@ export default class DatamoshLive {
   setResolution(width, height) {
     const w = Math.max(1, Math.floor(width));
     const h = Math.max(1, Math.floor(height));
-    if (w === this.renderWidth && h === this.renderHeight) return;
-    this.renderWidth       = w;
-    this.renderHeight      = h;
+    if (w === this.width && h === this.height) return;
+    this.width       = w;
+    this.height      = h;
     this._offscreen.width  = w;
     this._offscreen.height = h;
     this._offscreenCtx = this._offscreen.getContext('2d');
@@ -288,9 +283,9 @@ export default class DatamoshLive {
   resizeCanvas(width, height) {
     const w = Math.max(1, Math.floor(width));
     const h = Math.max(1, Math.floor(height));
-    if (w === this.displayWidth && h === this.displayHeight) return;
-    this.displayWidth  = w;
-    this.displayHeight = h;
+    if (w === this.canvasWidth && h === this.canvasHeight) return;
+    this.canvasWidth  = w;
+    this.canvasHeight = h;
     this.canvas.width  = w;
     this.canvas.height = h;
     this._ctx = this.canvas.getContext('2d');
