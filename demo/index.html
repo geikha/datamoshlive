@@ -86,9 +86,15 @@
       padding: 8px 10px;
       border-bottom: 1px solid var(--border);
       display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    #panel-head > div:first-child {
+      display: flex;
       justify-content: space-between;
       align-items: baseline;
-      flex-shrink: 0;
     }
 
     #panel-head .title { font-size: 13px; letter-spacing: 0.5px; }
@@ -291,8 +297,10 @@
 
   <div id="panel">
     <div id="panel-head">
-      <span class="title">datamosh<em>live</em></span>
-      <a href="https://geikha.xyz" target="_blank" rel="noopener">by geikha</a>
+      <div>
+        <span class="title">datamosh<em>live</em></span>
+        <a href="https://geikha.xyz" target="_blank" rel="noopener">by geikha</a>
+      </div>
       <span id="status">no source</span>
     </div>
 
@@ -435,12 +443,17 @@
         <input type="number" id="ctrl-rh" value="480" min="1" />
       </div>
     </div>
+
+    <!-- REPO -->
+    <div class="section" style="margin-top: auto; text-align: center; font-size: 11px;">
+      <a href="https://github.com/geikha/datamoshlive" target="_blank" rel="noopener" style="color: var(--fg-dim); text-decoration: none;">github.com/geikha/datamoshlive</a>
+    </div>
   </div>
 </div>
 
-<script src="https://unpkg.com/@geikha/datamoshlive@latest/dist/datamoshlive.js"></script>
 <script>
-  const PANEL_W   = 320;
+  function initDemo() {
+    const PANEL_W   = 320;
   const MOBILE_BP = 680;
 
   function isMobile() { return window.innerWidth <= MOBILE_BP; }
@@ -664,6 +677,20 @@
   }
   document.getElementById('ctrl-rw').addEventListener('change', applyRenderSize);
   document.getElementById('ctrl-rh').addEventListener('change', applyRenderSize);
+  }
+
+  // Load library and call initDemo when ready
+  const localScript = document.createElement('script');
+  localScript.src = '../dist/datamoshlive.js';
+  localScript.onload = initDemo;
+  localScript.onerror = () => {
+    // Local failed, load from unpkg
+    const cdnScript = document.createElement('script');
+    cdnScript.src = 'https://unpkg.com/@geikha/datamoshlive@latest/dist/datamoshlive.js';
+    cdnScript.onload = initDemo;
+    document.head.appendChild(cdnScript);
+  };
+  document.head.appendChild(localScript);
 </script>
 </body>
 </html>
