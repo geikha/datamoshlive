@@ -58,9 +58,10 @@ const dm = new DatamoshLive(opts)
 
 All init methods are async and awaitable.
 
-### `await dm.initCamera(opts?)`
-Opens the webcam and starts the loop. Returns the internal `<video>` element.
-- `opts.constraints` — MediaStreamConstraints (default: ideal render size)
+### `await dm.initCamera(selector?, opts?)`
+Opens the webcam and starts the loop. Returns the internal `<video>` element. Enumerates available cameras and selects by index or name.
+- `selector` — camera to use: number (index, default: `0`) or string (device label; exact or partial match)
+- `opts.constraints` — MediaStreamConstraints override (default: ideal render size)
 - `opts.autoStart` — set `false` to not call `start()` automatically
 
 ### `await dm.initVideo(source, opts?)`

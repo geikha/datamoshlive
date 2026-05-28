@@ -126,22 +126,62 @@ export default class DatamoshLive {
 
   // ---- Source init ----
 
-  async initCamera(opts = {}) {
+  async initCamera(selector = 0, opts = {}) {
     try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cameras = devices.filter((d) => d.kind === 'videoinput');
+
+      let device;
+      if (typeof selector === 'number') {
+        device = cameras[selector];
+      } else if (typeof selector === 'string') {
+        // Exact match first
+        device = cameras.find((d) => d.label === selector);
+        // Fallback to includes match
+        if (!device) {
+          device = cameras.find((d) => d.label.toLowerCase().includes(selector.toLowerCase()));
+        }
+      }
+
       const constraints = opts.constraints || {
-        video: { width: { ideal: this.width }, height: { ideal: this.height } },
+        video: device
+          ? { deviceId: { exact: device.deviceId }, width: { ideal: this.width }, height: { ideal: this.height } }
+          : { width: { ideal: this.width }, height: { ideal: this.height } },
       };
+
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      const video  = document.createElement('video');
-      video.srcObject   = stream;
-      video.muted       = true;
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.muted = true;
       video.playsInline = true;
-      await video.play();
-      this._input.setCamera(video, stream);
-      this._frameCount = 0;
-      this._pipeline.reset();
-      if (opts.autoStart !== false) this.start();
-      return video;
+
+      return new Promise((resolve) => {
+        const cleanup = () => {
+          video.removeEventListener('loadeddata', onLoadedData);
+          video.removeEventListener('error', onError);
+        };
+
+        const onLoadedData = () => {
+          cleanup();
+          this._input.setCamera(video, stream);
+          this._frameCount = 0;
+          this._pipeline.reset();
+          if (opts.autoStart !== false) this.start();
+          resolve(video);
+        };
+
+        const onError = (e) => {
+          cleanup();
+          console.warn('DatamoshLive.initCamera: video error:', e);
+          resolve(video);
+        };
+
+        video.addEventListener('loadeddata', onLoadedData, { once: true });
+        video.addEventListener('error', onError, { once: true });
+        video.play().catch((e) => {
+          console.warn('DatamoshLive.initCamera: play() blocked:', e);
+        });
+      });
     } catch (err) {
       console.warn('DatamoshLive.initCamera:', err);
     }
