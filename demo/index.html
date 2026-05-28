@@ -50,8 +50,8 @@
     #canvas-area canvas { display: block; }
 
     #panel {
-      width: 256px;
-      min-width: 256px;
+      width: 320px;
+      min-width: 320px;
       height: 100vh;
       overflow-y: auto;
       background: var(--bg-2);
@@ -169,9 +169,9 @@
     #cam-input:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
 
     /* ---- interact mode buttons ---- */
-    #btn-smear  { color: #cc88ff; border-color: #3a2050; }
-    #btn-smear:hover  { border-color: #7e4aae; }
-    #btn-smear.active { color: #cc88ff; border-color: #cc88ff; background: #1e1028; }
+    #btn-drop  { color: #cc88ff; border-color: #3a2050; }
+    #btn-drop:hover  { border-color: #7e4aae; }
+    #btn-drop.active { color: #cc88ff; border-color: #cc88ff; background: #1e1028; }
 
     #btn-corrupt { color: #88ffaa; border-color: #1a3020; }
     #btn-corrupt:hover { border-color: #4aae6a; }
@@ -318,9 +318,9 @@
 
     <!-- INTERACT -->
     <div class="section">
-      <div class="section-label">interaction (on click)</div>
+      <div class="section-label">click interact</div>
       <div class="row">
-        <button id="btn-smear">smear</button>
+        <button id="btn-drop">drop</button>
         <button id="btn-corrupt">corrupt</button>
         <button id="btn-hold">hold</button>
       </div>
@@ -339,19 +339,19 @@
       </div>
     </div>
 
-    <!-- SMEAR -->
+    <!-- AUTO-DROP -->
     <div class="section">
-      <div class="section-label">auto-smear</div>
+      <div class="section-label">drop</div>
       <div class="ctrl-row">
         <span class="lbl">rate</span>
-        <input type="range" id="ctrl-smear" min="0" max="100" step="1" value="0" />
-        <span class="val" id="val-smear">0%</span>
+        <input type="range" id="ctrl-drop-rate" min="0" max="100" step="1" value="0" />
+        <span class="val" id="val-drop-rate">0%</span>
       </div>
     </div>
 
     <!-- CORRUPT -->
     <div class="section">
-      <div class="section-label">auto-corrupt</div>
+      <div class="section-label">corrupt</div>
       <div class="ctrl-row">
         <span class="lbl">rate</span>
         <input type="range" id="ctrl-corrupt" min="0" max="100" step="1" value="0" />
@@ -364,6 +364,36 @@
       </div>
     </div>
 
+    <!-- SAMPLE / INJECT -->
+    <div class="section">
+      <div class="section-label">sample / inject</div>
+      <div class="check-row">
+        <label><input type="checkbox" id="ctrl-sample-loop" /> loop</label>
+      </div>
+      <div class="ctrl-row">
+        <span class="lbl">frames</span>
+        <input type="range" id="ctrl-sample-frames" min="1" max="60" step="1" value="1" />
+        <span class="val" id="val-sample-frames">1</span>
+      </div>
+      <div class="row">
+        <button id="btn-sample">sample</button>
+        <button id="btn-inject">inject</button>
+      </div>
+    </div>
+
+    <!-- RECOVER -->
+    <div class="section">
+      <div class="section-label">recover</div>
+      <div class="check-row">
+        <label><input type="checkbox" id="ctrl-recover" checked /> enabled</label>
+      </div>
+      <div class="ctrl-row">
+        <span class="lbl">after</span>
+        <input type="range" id="ctrl-recover-after" min="1" max="120" step="1" value="30" />
+        <span class="val" id="val-recover-after">30</span>
+      </div>
+    </div>
+    
     <!-- SETTINGS -->
     <div class="section">
       <div class="section-label">settings</div>
@@ -386,6 +416,7 @@
           <option value="vp8" selected>vp8</option>
           <option value="vp9">vp9</option>
           <option value="h264">h264</option>
+          <option value="av1">av1</option>
         </select>
       </div>
       <div class="ctrl-row">
@@ -409,7 +440,7 @@
 
 <script src="../dist/datamoshlive.js"></script>
 <script>
-  const PANEL_W   = 256;
+  const PANEL_W   = 320;
   const MOBILE_BP = 680;
 
   function isMobile() { return window.innerWidth <= MOBILE_BP; }
@@ -465,8 +496,8 @@
   // ---- Canvas interaction modes ----
 
   let mode = null;
-  const modeButtons = ['btn-smear', 'btn-corrupt', 'btn-hold'];
-  const cursors = { smear: 'crosshair', corrupt: 'crosshair', hold: 'grab' };
+  const modeButtons = ['btn-drop', 'btn-corrupt', 'btn-hold'];
+  const cursors = { drop: 'crosshair', corrupt: 'crosshair', hold: 'grab' };
 
   function setMode(m) {
     mode = (mode === m) ? null : m;
@@ -475,16 +506,15 @@
       document.getElementById(id).classList.toggle('active', mode === key);
     });
     dm.canvas.style.cursor = mode ? cursors[mode] : 'default';
-    // release hold if switching away
     if (mode !== 'hold') dm.hold = false;
   }
 
-  document.getElementById('btn-smear').addEventListener('click',   () => setMode('smear'));
+  document.getElementById('btn-drop').addEventListener('click',    () => setMode('drop'));
   document.getElementById('btn-corrupt').addEventListener('click', () => setMode('corrupt'));
   document.getElementById('btn-hold').addEventListener('click',    () => setMode('hold'));
 
   dm.canvas.addEventListener('pointerdown', () => {
-    if (mode === 'smear')   dm.smear();
+    if (mode === 'drop')    dm.drop();
     if (mode === 'corrupt') dm.corrupt();
     if (mode === 'hold')    { dm.hold = true; dm.canvas.style.cursor = 'grabbing'; }
   });
@@ -538,11 +568,11 @@
     document.getElementById('val-speed').textContent = e.target.value;
   });
 
-  // ---- Auto-smear ----
+  // ---- Auto-drop ----
 
-  document.getElementById('ctrl-smear').addEventListener('input', (e) => {
-    dm.smearRate = e.target.value / 100;
-    document.getElementById('val-smear').textContent = e.target.value + '%';
+  document.getElementById('ctrl-drop-rate').addEventListener('input', (e) => {
+    dm.dropRate = e.target.value / 100;
+    document.getElementById('val-drop-rate').textContent = e.target.value + '%';
   });
 
   // ---- Auto-corrupt ----
@@ -555,6 +585,53 @@
   document.getElementById('ctrl-amount').addEventListener('input', (e) => {
     dm.corruptAmount = e.target.value / 100;
     document.getElementById('val-amount').textContent = e.target.value + '%';
+  });
+
+  // ---- Recover ----
+
+  document.getElementById('ctrl-recover').addEventListener('change', (e) => {
+    dm.recover = e.target.checked;
+  });
+
+  document.getElementById('ctrl-recover-after').addEventListener('input', (e) => {
+    dm.recoverAfter = parseInt(e.target.value, 10);
+    document.getElementById('val-recover-after').textContent = e.target.value;
+  });
+
+  // ---- Sample / Inject ----
+
+  document.getElementById('ctrl-sample-loop').addEventListener('change', (e) => {
+    dm.sampleLoop = e.target.checked;
+  });
+
+  document.getElementById('ctrl-sample-frames').addEventListener('input', (e) => {
+    dm.sampleFrames = parseInt(e.target.value, 10);
+    document.getElementById('val-sample-frames').textContent = e.target.value;
+  });
+
+  document.getElementById('btn-sample').addEventListener('click', () => {
+    dm.sample();
+    setStatus('sampling ' + dm.sampleFrames + ' frame' + (dm.sampleFrames > 1 ? 's' : '') + '...');
+  });
+
+  document.getElementById('btn-inject').addEventListener('click', () => {
+    const btn = document.getElementById('btn-inject');
+    if (btn.classList.contains('active')) {
+      // If looping, clicking again stops it. Otherwise it auto-stops after playback.
+      if (dm.sampleLoop) {
+        dm.stopInject();
+      }
+      btn.classList.remove('active');
+    } else {
+      dm.inject();
+      btn.classList.add('active');
+      // If not looping, automatically disable the button after the samples finish.
+      if (!dm.sampleLoop) {
+        setTimeout(() => {
+          btn.classList.remove('active');
+        }, (dm.sampleFrames / (dm.fps || 30)) * 1000 + 100);
+      }
+    }
   });
 
   // ---- Settings ----

@@ -8,85 +8,17 @@
  *   4. Incoming delta frames decoded against the stale reference →
  *      motion vectors paint old pixels into new positions → smearing
  *
- * smear()   — one-shot: force keyframe → drop it → auto-recover after ~30 delta frames
- * sync()    — force keyframe → deliver it → clean reference (cancels any pending smear)
- * corrupt() — corrupt the next delta frame's payload → packet-loss style artifact
+ * drop()    — one-shot: drop next frame → auto-recover after recoverAfter frames
+ * sync()    — force keyframe → deliver it → clean reference (cancels any pending drop)
+ * corrupt() — corrupt the next frame's payload → packet-loss style artifact
+ * sample(n) — capture the next n encoded frames into a reusable buffer
+ * inject()  — loop the sample buffer instead of encoding new frames
  */
 
-const CODEC_MAP = {
-  vp8:  'vp8',
-  vp9:  'vp09.00.10.08',
-  h264: 'avc1.42001E',
-};
+import { resolveParam, PARAM_CONFIG } from './params.js';
+import { resolveCodec, getCodecString } from './codec.js';
 
-export function resolveCodec(name, fallback = 'vp8') {
-  const mapped = CODEC_MAP[name];
-  if (mapped) return mapped;
-
-  // If not in map, validate it's a known codec string (vp8, vp9, or h26x variant)
-  if (/^(vp8|vp09|avc1)/.test(name)) return name;
-
-  console.warn(`DatamoshLive: unknown codec "${name}", falling back to previous codec`);
-  return fallback;
-}
-
-export { PARAM_CONFIG, resolveParam };
-
-// Parameter configuration: type, default, and bounds.
-const PARAM_CONFIG = {
-  speed:         { default: 2,        type: 'number', integer: true, min: 1 },
-  enabled:       { default: true,     type: 'boolean' },
-  smearRate:     { default: 0,        type: 'number', min: 0, max: 1 },
-  corruptRate:   { default: 0,        type: 'number', min: 0, max: 1 },
-  corruptAmount: { default: 0.3,      type: 'number', min: 0, max: 1 },
-  hold:          { default: false,    type: 'boolean' },
-  bitrate:       { default: 1_000_000, type: 'number', min: 1 },
-  codec:         { default: 'vp8',    type: 'string' },
-};
-
-// Resolve a parameter: call if function, apply type coercion, bounds, defaults.
-function resolveParam(paramValue, configKey) {
-  const config = PARAM_CONFIG[configKey];
-  if (!config) return paramValue;
-
-  // Call if function, otherwise use as-is.
-  let value = typeof paramValue === 'function' ? paramValue() : paramValue;
-
-  // Use default for undefined or NaN.
-  if (value === undefined || (typeof value === 'number' && !Number.isFinite(value))) {
-    value = config.default;
-  }
-
-  // Type coercion.
-  if (config.type === 'boolean') {
-    value = !!value;
-  } else if (config.type === 'number') {
-    value = Number(value);
-    if (!Number.isFinite(value)) value = config.default;
-
-    if (config.integer) value = Math.round(value);
-    if (config.min != null) value = Math.max(config.min, value);
-    if (config.max != null) value = Math.min(config.max, value);
-  }
-
-  return value;
-}
-
-// Pick H.264 AVC level based on resolution (coded area in pixels).
-// H.264 levels have maximum coded areas; higher resolution needs higher level.
-function getH264CodecString(width, height) {
-  const area = width * height;
-
-  if (area <= 414720) {
-    return 'avc1.42001E'; // Level 3.0
-  } else if (area <= 921600) {
-    return 'avc1.42001F'; // Level 3.1
-  } else if (area <= 2560000) {
-    return 'avc1.420028'; // Level 4.0
-  } else {
-    return 'avc1.420029'; // Level 4.1 (max ~2160p)
-  }
-}
+export { resolveParam, PARAM_CONFIG };
 
 export default class DatamoshPipeline {
   /**
@@ -104,25 +36,38 @@ export default class DatamoshPipeline {
     this._width   = opts.width;
     this._height  = opts.height;
     this._bitrate = opts.bitrate || 1_000_000;
-    let codec = resolveCodec(opts.codec || 'vp8');
-    // For H.264, pick AVC level based on resolution.
-    if (codec.startsWith('avc')) {
-      codec = getH264CodecString(this._width, this._height);
-    }
-    this._codec = codec;
-    this._lastValidCodec = codec;
-    this._encoder = null;
-    this._decoder = null;
+    this._codec   = this._resolveCodec(opts.codec || 'vp8');
+    this._lastValidCodec = this._codec;
+    this._sampleBuffer = [];
+    this._init();
+  }
+
+  // Reset all per-stream effect/state flags to their initial values.
+  // Note: _sampleBuffer is intentionally preserved across resets.
+  _resetState() {
     this._nextKeyFrame        = true;
-    this._dropNextKeyFrame    = false;
     this._deliverNextKeyFrame = false;
     this._gotFirstKeyFrame    = false;
-    this._smearPending        = false;
+    this._dropNext            = false;
     this._recoverAfterDeltas  = 0;
     this._corruptNext         = false;
-    this._holding      = false;
-    this._waitForDelta = false;
-    this._init();
+    this._holding             = false;
+    this._waitForDelta        = false;
+    this._samplesNeeded       = 0;
+    this._injecting           = false;
+    this._injectIndex         = 0;
+  }
+
+  // Trigger auto-recovery if enabled: schedule a clean keyframe after recoverAfter frames.
+  _startRecovery() {
+    if (!resolveParam(this._params.recover, 'recover')) return;
+    const after = resolveParam(this._params.recoverAfter, 'recoverAfter');
+    this._recoverAfterDeltas = Math.max(this._recoverAfterDeltas, after);
+  }
+
+  // Resolve a codec name to the resolution-appropriate WebCodecs codec string.
+  _resolveCodec(codec) {
+    return getCodecString(resolveCodec(codec, this._lastValidCodec), this._width, this._height);
   }
 
   _init() {
@@ -150,88 +95,83 @@ export default class DatamoshPipeline {
       height:  this._height,
       bitrate: this._bitrate,
     };
-    // H.264: use Annex-B so SPS/PPS are embedded inline and decoder needs no description.
-    if (this._codec.startsWith('avc')) {
+    if (this._codec.startsWith('avc1')) {
       encoderConfig.avc = { format: 'annexb' };
     }
 
     this._encoder = new VideoEncoder({
       output: (chunk) => this._handleChunk(chunk),
-      error: (err) => console.error('DatamoshLive encoder:', err),
+      error: (err) => {
+        console.warn('DatamoshLive encoder:', err);
+        if (this._encoder?.state === 'closed') {
+          requestAnimationFrame(() => this._init());
+        }
+      },
     });
     this._encoder.configure(encoderConfig);
 
-    this._nextKeyFrame        = true;
-    this._dropNextKeyFrame    = false;
-    this._deliverNextKeyFrame = false;
-    this._gotFirstKeyFrame    = false;
-    this._smearPending        = false;
-    this._recoverAfterDeltas  = 0;
-    this._corruptNext         = false;
-    this._holding      = false;
-    this._waitForDelta = false;
+    this._resetState();
   }
 
   _handleChunk(chunk) {
     if (!this._decoder || this._decoder.state === 'closed') return;
 
-    // Hold: drop all incoming chunks so the last drawn frame stays frozen on canvas.
+    // Hold: drop everything, freeze last drawn frame.
     if (resolveParam(this._params.hold, 'hold')) {
       this._holding = true;
       return;
     }
 
-    // After un-hold: skip keyframes and wait for the first delta to run over the frozen frame.
+    // After un-hold: skip keyframes until the first delta runs over the frozen image.
     if (this._waitForDelta) {
       if (chunk.type === 'key') return;
-      this._processDeltaChunk(chunk);
       this._waitForDelta = false;
+    }
+
+    // Bootstrap: decoder needs one keyframe to establish its initial reference.
+    if (!this._gotFirstKeyFrame) {
+      if (chunk.type !== 'key') return;
+      this._gotFirstKeyFrame = true;
+      this._decoder.decode(chunk);
       return;
     }
 
-    if (chunk.type === 'key') {
-      // First keyframe ever — must be decoded to initialize decoder reference.
-      if (!this._gotFirstKeyFrame) {
-        this._gotFirstKeyFrame = true;
-        this._decoder.decode(chunk);
-        return;
-      }
-
-      // sync() override — deliver regardless of anything else.
-      if (this._deliverNextKeyFrame) {
-        this._deliverNextKeyFrame = false;
-        this._dropNextKeyFrame    = false;
-        this._smearPending        = false;
-        this._recoverAfterDeltas  = 0;
-        this._decoder.decode(chunk);
-        return;
-      }
-
-      // smear() one-shot: drop this keyframe, start delta-frame recovery countdown.
-      if (this._smearPending) {
-        this._smearPending       = false;
-        this._recoverAfterDeltas = 30;
-        return;
-      }
-
-      // smearRate > 0: continuous probabilistic keyframe dropping.
-      const smearRate = resolveParam(this._params.smearRate, 'smearRate');
-      const shouldDrop = this._dropNextKeyFrame ||
-        (smearRate > 0 && Math.random() < smearRate);
-      if (shouldDrop) {
-        this._dropNextKeyFrame = false;
-        return;
-      }
-
+    // sync() or recovery: deliver this keyframe clean, cancel all pending ops.
+    if (this._deliverNextKeyFrame && chunk.type === 'key') {
+      this._deliverNextKeyFrame = false;
+      this._dropNext            = false;
+      this._recoverAfterDeltas  = 0;
       this._decoder.decode(chunk);
-
-    } else {
-      this._processDeltaChunk(chunk);
+      return;
     }
-  }
 
-  // Shared delta-frame processing: recovery countdown, corruption, and speed-decode.
-  _processDeltaChunk(chunk) {
+    // --- Drop (one-shot or rate-based, any frame type) ---
+    if (this._dropNext) {
+      this._dropNext = false;
+      this._startRecovery();
+      return;
+    }
+    const dropRate = resolveParam(this._params.dropRate, 'dropRate');
+    if (dropRate > 0 && Math.random() < dropRate) {
+      this._startRecovery();
+      return;
+    }
+
+    // --- Corrupt (one-shot or rate-based, any frame type) ---
+    let outChunk = chunk;
+    if (this._corruptNext) {
+      this._corruptNext = false;
+      outChunk = this._corruptChunk(chunk, resolveParam(this._params.corruptAmount, 'corruptAmount'));
+      this._startRecovery();
+    } else {
+      const corruptRate = resolveParam(this._params.corruptRate, 'corruptRate');
+      if (corruptRate > 0 && Math.random() < corruptRate) {
+        outChunk = this._corruptChunk(chunk, resolveParam(this._params.corruptAmount, 'corruptAmount'));
+        this._startRecovery();
+      }
+    }
+
+    // --- Recovery countdown ---
     if (this._recoverAfterDeltas > 0) {
       this._recoverAfterDeltas--;
       if (this._recoverAfterDeltas === 0) {
@@ -240,31 +180,25 @@ export default class DatamoshPipeline {
       }
     }
 
-    let outChunk = chunk;
-    const corruptRate   = resolveParam(this._params.corruptRate,   'corruptRate');
-    const corruptAmount = resolveParam(this._params.corruptAmount, 'corruptAmount');
-
-    if (this._corruptNext) {
-      this._corruptNext = false;
-      outChunk = this._corruptChunk(chunk, corruptAmount);
-      this._recoverAfterDeltas = Math.max(this._recoverAfterDeltas, 30);
-    } else if (corruptRate > 0 && Math.random() < corruptRate) {
-      outChunk = this._corruptChunk(chunk, corruptAmount);
-      this._recoverAfterDeltas = Math.max(this._recoverAfterDeltas, 30);
+    // --- Sample: capture a copy of the post-effect chunk while processing normally ---
+    if (this._samplesNeeded > 0) {
+      const buf = new ArrayBuffer(outChunk.byteLength);
+      outChunk.copyTo(buf);
+      const init = { type: outChunk.type, timestamp: outChunk.timestamp, data: buf };
+      if (outChunk.duration != null) init.duration = outChunk.duration;
+      this._sampleBuffer.push(new EncodedVideoChunk(init));
+      this._samplesNeeded--;
     }
 
-    const speed = resolveParam(this._params.speed, 'speed');
+    // --- Decode (speed only multiplies delta frames) ---
+    const speed = chunk.type === 'key' ? 1 : resolveParam(this._params.speed, 'speed');
     for (let i = 0; i < speed; i++) {
       if (!this._decoder || this._decoder.state === 'closed') break;
-      try {
-        this._decoder.decode(outChunk);
-      } catch (_) {
-        // Malformed chunk rejected by decoder — skip
-      }
+      try { this._decoder.decode(outChunk); } catch (_) {}
     }
   }
 
-  // Zero out a contiguous byte region inside a delta frame, simulating packet loss.
+  // Zero out a contiguous byte region, simulating packet loss.
   // First ~10 bytes (frame header) are preserved to reduce hard decoder crashes.
   _corruptChunk(chunk, amount = 0.3) {
     const size = chunk.byteLength;
@@ -286,74 +220,97 @@ export default class DatamoshPipeline {
   encode(frame) {
     if (!this._encoder || this._encoder.state === 'closed') return;
 
-    // Detect hold toggle: if we were holding and now not, wait for the first delta.
     const prevHolding = this._holding;
     const nowHolding  = resolveParam(this._params.hold, 'hold');
     if (prevHolding && !nowHolding) {
-      this._waitForDelta       = true;
-      this._recoverAfterDeltas = Math.max(this._recoverAfterDeltas, 30);
+      this._waitForDelta = true;
+      this._startRecovery();
     }
     this._holding = nowHolding;
+
+    // Inject: replay sample buffer instead of encoding the live frame.
+    if (this._injecting) {
+      if (nowHolding || this._sampleBuffer.length === 0) return;
+      const sampleLoop = resolveParam(this._params.sampleLoop, 'sampleLoop');
+      const bufLen = this._sampleBuffer.length;
+      if (this._injectIndex >= bufLen && !sampleLoop) {
+        this._injecting = false;
+        return;
+      }
+      const chunk = this._sampleBuffer[this._injectIndex % bufLen];
+      this._injectIndex++;
+      const speed = chunk.type === 'key' ? 1 : resolveParam(this._params.speed, 'speed');
+      for (let i = 0; i < speed; i++) {
+        if (!this._decoder || this._decoder.state === 'closed') break;
+        try { this._decoder.decode(chunk); } catch (_) {}
+      }
+      return;
+    }
 
     const keyFrame = this._nextKeyFrame;
     this._nextKeyFrame = false;
     this._encoder.encode(frame, { keyFrame });
   }
 
-  // Force a keyframe and deliver it — cancels any pending smear, clean reference.
+  // Force a keyframe and deliver it — cancels any pending drop, clean reference.
   sync() {
     this._nextKeyFrame        = true;
-    this._dropNextKeyFrame    = false;
     this._deliverNextKeyFrame = true;
-    this._smearPending        = false;
+    this._dropNext            = false;
   }
 
-  // Force a keyframe, drop it, then auto-recover after ~30 delta frames.
-  smear() {
-    this._nextKeyFrame = true;
-    this._smearPending = true;
-  }
+  // Drop the next incoming frame and start recovery.
+  drop() { this._dropNext = true; }
 
-  // Flag the next delta frame for payload corruption.
-  corrupt() {
-    this._corruptNext = true;
-  }
+  // Flag the next frame for payload corruption.
+  corrupt() { this._corruptNext = true; }
 
   // Ask for the next encoded frame to be a keyframe.
-  requestKeyFrame() {
-    this._nextKeyFrame = true;
+  requestKeyFrame() { this._nextKeyFrame = true; }
+
+  // Capture the next n post-effect encoded frames into the sample buffer.
+  sample(n) {
+    this._injecting     = false;
+    this._injectIndex   = 0;
+    this._sampleBuffer  = [];
+    this._samplesNeeded = Math.max(1, n);
   }
+
+  // Start replaying the sample buffer instead of the live feed.
+  // Plays once then stops unless sampleLoop is true. Also triggers recovery.
+  inject() {
+    if (this._sampleBuffer.length === 0) return;
+    this._injecting   = true;
+    this._injectIndex = 0;
+    this._startRecovery();
+  }
+
+  // Stop injection and resume normal live encoding.
+  stopInject() { this._injecting = false; }
 
   reset(width, height, bitrate, codec) {
     let resolutionChanged = false;
-    if (width   != null) {
-      this._width   = Math.max(1, Math.floor(width));
-      resolutionChanged = true;
-    }
-    if (height  != null) {
-      this._height  = Math.max(1, Math.floor(height));
-      resolutionChanged = true;
-    }
+    if (width   != null) { this._width  = Math.max(1, Math.floor(width));  resolutionChanged = true; }
+    if (height  != null) { this._height = Math.max(1, Math.floor(height)); resolutionChanged = true; }
     if (bitrate != null) this._bitrate = Math.max(1, bitrate);
     if (codec   != null) {
-      let resolved = resolveCodec(codec, this._lastValidCodec);
-      // For H.264, recalculate AVC level based on new resolution.
-      if (resolved.startsWith('avc')) {
-        resolved = getH264CodecString(this._width, this._height);
-      }
-      this._codec = resolved;
-      this._lastValidCodec = resolved;
-    } else if (resolutionChanged && this._codec.startsWith('avc')) {
-      // Resolution changed while using H.264 — recalculate appropriate AVC level.
-      this._codec = getH264CodecString(this._width, this._height);
+      this._codec = this._resolveCodec(codec);
+      this._lastValidCodec = this._codec;
+    } else if (resolutionChanged) {
+      this._codec = getCodecString(this._codec, this._width, this._height);
       this._lastValidCodec = this._codec;
     }
-    try { if (this._encoder?.state !== 'closed') this._encoder.close(); } catch (_) {}
-    try { if (this._decoder?.state !== 'closed') this._decoder.close(); } catch (_) {}
+    this._closeCodecs();
     this._init();
   }
 
   destroy() {
+    this._closeCodecs();
+    this._sampleBuffer = [];
+  }
+
+  // Close encoder and decoder if open, swallowing teardown errors.
+  _closeCodecs() {
     try { if (this._encoder?.state !== 'closed') this._encoder.close(); } catch (_) {}
     try { if (this._decoder?.state !== 'closed') this._decoder.close(); } catch (_) {}
   }

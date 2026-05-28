@@ -3,20 +3,24 @@
  *
  *   const dm = new DatamoshLive({ width: 640, height: 480 });
  *   await dm.initCamera();
- *   dm.smear();        // one-shot smear, auto-recovers
- *   dm.smearRate = 0.5 // continuous probabilistic smearing (0 = off)
+ *   dm.drop();         // one-shot frame drop, auto-recovers
+ *   dm.dropRate = 0.5  // continuous probabilistic dropping (0 = off)
  */
 
-import DatamoshPipeline, { resolveCodec, resolveParam } from './pipeline.js';
+import DatamoshPipeline, { resolveParam } from './pipeline.js';
 import DatamoshInput from './input.js';
 
 const DEFAULT_PARAMS = {
   speed:         1,      // times each delta frame is decoded (smear strength)
   enabled:       true,   // false = bypass codec, draw source directly
-  smearRate:     0,      // probability (0–1) a keyframe is dropped each cycle; 0 = off
-  corruptRate:   0,      // probability (0–1) a delta frame is corrupted each cycle; 0 = off
+  dropRate:      0,      // probability (0–1) any frame is dropped each cycle; 0 = off
+  corruptRate:   0,      // probability (0–1) a frame is corrupted each cycle; 0 = off
   corruptAmount: 0.3,    // fraction (0–1) of frame bytes to zero out per corruption
   hold:          false,
+  recover:       true,   // whether to auto-recover after drops/corruptions
+  recoverAfter:  null,   // frames before recovery keyframe; null = live function (= fps or 30)
+  sampleFrames:  1,      // default number of frames captured by sample()
+  sampleLoop:    false,  // if true, inject() loops the sample buffer; if false, plays once then stops
   bitrate:       1_000_000,
   codec:         'vp8',
 };
@@ -54,6 +58,9 @@ export default class DatamoshLive {
     this._frameCount    = 0;
 
     this.params = { ...DEFAULT_PARAMS, ...(opts.params || {}) };
+    if (this.params.recoverAfter == null) {
+      this.params.recoverAfter = () => this._fps > 0 ? this._fps : 30;
+    }
 
     this.canvas = opts.canvas || document.createElement('canvas');
     this.canvas.width  = this.canvasWidth;
@@ -100,11 +107,6 @@ export default class DatamoshLive {
     }
 
     this._frameCount++;
-
-    // Force periodic keyframes when smearRate > 0 — gives the drop logic frames to work with.
-    if (this._resolveParam('smearRate') > 0 && this._frameCount % 60 === 0) {
-      this._pipeline.requestKeyFrame();
-    }
 
     const drawn = this._input.capture(this._offscreenCtx, this.width, this.height);
     if (!drawn) return;
@@ -260,14 +262,14 @@ export default class DatamoshLive {
   }
 
   /**
-   * Probability (0–1) that a keyframe is dropped each cycle.
-   * Set to 0 to disable continuous smearing.
+   * Probability (0–1) that any incoming frame is dropped each cycle.
+   * Set to 0 to disable continuous dropping.
    */
-  get smearRate()      { return this.params.smearRate; }
-  set smearRate(v)     { this.params.smearRate = Math.max(0, Math.min(1, v)); }
+  get dropRate()       { return this.params.dropRate; }
+  set dropRate(v)      { this.params.dropRate = Math.max(0, Math.min(1, v)); }
 
   /**
-   * Probability (0–1) that a delta frame is corrupted each cycle.
+   * Probability (0–1) that any incoming frame is corrupted each cycle.
    * Set to 0 to disable continuous corruption.
    */
   get corruptRate()    { return this.params.corruptRate; }
@@ -278,6 +280,24 @@ export default class DatamoshLive {
 
   get hold()           { return this.params.hold; }
   set hold(v)          { this.params.hold = v; }
+
+  get recover()        { return this.params.recover; }
+  set recover(v)       { this.params.recover = v; }
+
+  get recoverAfter()   { return this.params.recoverAfter; }
+  set recoverAfter(v)  { this.params.recoverAfter = v; }
+
+  get sampleFrames()   { return this.params.sampleFrames; }
+  set sampleFrames(v) {
+    const n = Math.max(1, Math.round(Number(v) || 1));
+    if (n !== this.params.sampleFrames) {
+      this._pipeline.stopInject();
+      this.params.sampleFrames = n;
+    }
+  }
+
+  get sampleLoop()     { return this.params.sampleLoop; }
+  set sampleLoop(v)    { this.params.sampleLoop = !!v; }
 
   get bitrate()        { return this.params.bitrate; }
   set bitrate(v)       { this.setParam('bitrate', v); }
@@ -295,14 +315,23 @@ export default class DatamoshLive {
   }
 
 
-  // Force keyframe + deliver it → clean sync, cancels any pending smear.
+  // Force keyframe + deliver it → clean sync, cancels any pending drop.
   sync()    { this._pipeline.sync(); }
 
-  // Force keyframe + drop it → datamosh smear that auto-recovers in ~30 frames.
-  smear()   { this._pipeline.smear(); }
+  // Drop the next incoming frame → datamosh artifact, auto-recovers if recover is enabled.
+  drop()    { this._pipeline.drop(); }
 
-  // Corrupt the next delta frame → packet-loss style artifact.
+  // Corrupt the next incoming frame → packet-loss style artifact.
   corrupt() { this._pipeline.corrupt(); }
+
+  // Capture the next n (default: sampleFrames) post-effect encoded frames into a reusable buffer.
+  sample(n) { this._pipeline.sample(n != null ? n : this._resolveParam('sampleFrames')); }
+
+  // Start replaying the sample buffer on every encode call instead of the live feed.
+  inject()     { this._pipeline.inject(); }
+
+  // Stop injection and resume normal live encoding.
+  stopInject() { this._pipeline.stopInject(); }
 
   // ---- Render size (encoder / decoder dimensions) ----
 
