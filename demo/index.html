@@ -3,357 +3,590 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DatamoshLive — Demo</title>
+  <title>DatamoshLive</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
+    :root {
+      --bg:     #000000;
+      --bg-2:   #111111;
+      --bg-3:   #1a1a1a;
+      --fg:     #e8e8e8;
+      --fg-dim: #888888;
+      --fg-2:   #555555;
+      --accent: #c3ff20;
+      --border: #2a2a2a;
+      --error:  #f2777a;
+      --ok:     #99cc99;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-      background: #1a1a2e;
-      color: #e0e0e0;
-      min-height: 100vh;
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-feature-settings: "liga" 0;
+      overflow: hidden;
+    }
+
+    #layout {
       display: flex;
-      flex-direction: column;
+      flex-direction: row;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #canvas-area {
+      flex: 1;
+      min-width: 0;
+      display: flex;
       align-items: center;
-      padding: 24px;
+      justify-content: center;
+      background: var(--bg);
     }
-    h1 { margin-bottom: 8px; font-size: 1.4rem; color: #fff; }
-    .subtitle { font-size: 0.85rem; color: #888; margin-bottom: 20px; }
-    #canvas-wrap {
-      border: 2px solid #333;
-      background: #000;
-      margin-bottom: 20px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-      line-height: 0;
-    }
-    .controls {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px 24px;
-      max-width: 520px;
-      width: 100%;
-      background: #16213e;
-      padding: 16px 20px;
-      border-radius: 8px;
-      margin-bottom: 12px;
-    }
-    .controls label {
+
+    #canvas-area canvas { display: block; }
+
+    #panel {
+      width: 256px;
+      min-width: 256px;
+      height: 100vh;
+      overflow-y: auto;
+      background: var(--bg-2);
+      border-left: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      font-size: 0.8rem;
-      color: #aaa;
     }
-    .controls label > span {
-      margin-bottom: 2px;
+
+    @media (max-width: 680px) {
+      html, body { overflow: auto; height: auto; }
+
+      #layout {
+        flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+      }
+
+      #canvas-area { flex: none; }
+
+      #panel {
+        width: 100%;
+        min-width: 0;
+        height: auto;
+        overflow-y: visible;
+        border-left: none;
+        border-top: 1px solid var(--border);
+      }
+    }
+
+    /* ---- panel header ---- */
+    #panel-head {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
+      align-items: baseline;
+      flex-shrink: 0;
     }
-    .val { color: #6cf; font-family: monospace; }
-    .controls input[type="range"]    { width: 100%; accent-color: #6cf; }
-    .controls input[type="checkbox"] { accent-color: #6cf; width: 16px; height: 16px; cursor: pointer; }
-    .controls input[type="number"]   {
-      background: #0f3460; color: #e0e0e0;
-      border: 1px solid #1a3a6a; padding: 3px 6px;
-      border-radius: 3px; font-size: 0.8rem; width: 100%;
+
+    #panel-head .title { font-size: 13px; letter-spacing: 0.5px; }
+    #panel-head .title em { font-style: normal; color: var(--accent); }
+
+    #panel-head a {
+      font-size: 10px;
+      color: var(--fg-2);
+      text-decoration: none;
+      letter-spacing: 0.5px;
     }
-    select {
-      background: #0f3460; color: #e0e0e0;
-      border: 1px solid #1a3a6a; padding: 3px 6px;
-      border-radius: 3px; font-size: 0.8rem;
+    #panel-head a:hover { color: var(--accent); }
+
+    #status {
+      font-size: 10px;
+      color: var(--fg-2);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 130px;
     }
-    .btn-row {
-      display: flex; gap: 8px;
-      margin-bottom: 16px; flex-wrap: wrap; justify-content: center;
+    #status.err { color: var(--error); }
+
+    /* ---- sections ---- */
+    .section {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
     }
-    button {
-      background: #0f3460; border: 1px solid #1a3a6a;
-      color: #e0e0e0; padding: 6px 16px;
-      border-radius: 4px; cursor: pointer; font-size: 0.85rem;
-    }
-    button:hover  { background: #1a4a80; }
-    button.active { background: #e94560; border-color: #e94560; }
-    button#btn-smear {
-      background: #2e1a3e; border-color: #7e4aae; color: #cc88ff;
-    }
-    button#btn-smear:hover  { background: #4a2a60; }
-    button#btn-corrupt {
-      background: #1e2e1a; border-color: #4aae6a; color: #88ffaa;
-    }
-    button#btn-corrupt:hover { background: #2a4a30; }
-    .full-row { grid-column: 1 / -1; }
+
     .section-label {
-      grid-column: 1 / -1;
-      font-size: 0.75rem; color: #6cf;
-      text-transform: uppercase; letter-spacing: 1px;
-      border-top: 1px solid #2a3a5e; padding-top: 8px; margin-top: 4px;
+      font-size: 10px;
+      color: var(--accent);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
     }
-    #warn-no-webcodecs {
+
+    /* ---- buttons ---- */
+    button {
+      font-family: inherit;
+      font-size: 12px;
+      background: var(--bg-2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 3px 8px;
+      cursor: pointer;
+      outline: none;
+      letter-spacing: 0.3px;
+    }
+
+    button:hover  { border-color: var(--fg-dim); }
+    button:active { background: var(--bg-3); }
+    button:focus  { outline: 1px solid var(--accent); outline-offset: -1px; }
+    button.active { color: var(--accent); border-color: var(--accent); background: var(--bg-3); }
+
+    /* ---- rows ---- */
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 5px;
+    }
+    .row:last-child { margin-bottom: 0; }
+    .row button { flex: 1; }
+
+    /* ---- source cam input ---- */
+    #cam-input {
+      font-family: inherit;
+      font-size: 12px;
+      background: var(--bg);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 2px 5px;
+      width: 48px;
+      outline: none;
+    }
+    #cam-input:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+    /* ---- interact mode buttons ---- */
+    #btn-smear  { color: #cc88ff; border-color: #3a2050; }
+    #btn-smear:hover  { border-color: #7e4aae; }
+    #btn-smear.active { color: #cc88ff; border-color: #cc88ff; background: #1e1028; }
+
+    #btn-corrupt { color: #88ffaa; border-color: #1a3020; }
+    #btn-corrupt:hover { border-color: #4aae6a; }
+    #btn-corrupt.active { color: #88ffaa; border-color: #88ffaa; background: #0f2018; }
+
+    #btn-hold { color: var(--fg-dim); }
+    #btn-hold.active { color: var(--accent); border-color: var(--accent); background: var(--bg-3); }
+
+    #btn-sync  { color: var(--ok, #99cc99); border-color: #1a3020; }
+    #btn-sync:hover { border-color: var(--ok, #99cc99); }
+
+    #btn-start { color: var(--fg-dim); }
+    #btn-start.active { color: var(--error); border-color: var(--error); background: #1a0808; }
+
+    #btn-stop { color: var(--fg-dim); }
+    #btn-stop.active  { color: var(--fg-2); border-color: var(--border); background: var(--bg-3); }
+
+    /* ---- range rows ---- */
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 5px;
+    }
+    .ctrl-row:last-child { margin-bottom: 0; }
+
+    .ctrl-row > .lbl {
+      width: 54px;
+      min-width: 54px;
+      color: var(--fg-dim);
+      font-size: 11px;
+    }
+
+    .ctrl-row input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .ctrl-row .val {
+      width: 38px;
+      text-align: right;
+      color: var(--accent);
+      font-size: 11px;
+    }
+
+    /* ---- checkbox row ---- */
+    .check-row {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 5px;
+    }
+    .check-row:last-child { margin-bottom: 0; }
+
+    .check-row label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--fg-dim);
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    input[type="checkbox"] {
+      accent-color: var(--accent);
+      width: 12px; height: 12px;
+      cursor: pointer;
+    }
+
+    /* ---- select ---- */
+    select {
+      font-family: inherit;
+      font-size: 11px;
+      background: var(--bg);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 2px 4px;
+      outline: none;
+      cursor: pointer;
+    }
+    select:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+    /* ---- number inputs ---- */
+    input[type="number"] {
+      font-family: inherit;
+      font-size: 11px;
+      background: var(--bg);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 2px 4px;
+      width: 58px;
+      outline: none;
+    }
+    input[type="number"]:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+    .row .lbl {
+      width: 46px;
+      min-width: 46px;
+      color: var(--fg-2);
+      font-size: 11px;
+    }
+
+    #warn {
       display: none;
-      background: #3a0f0f; border: 1px solid #803030;
-      color: #ffaaaa; padding: 12px 20px; border-radius: 6px;
-      margin-bottom: 16px; font-size: 0.85rem;
-      max-width: 520px; text-align: center;
+      margin: 8px 10px;
+      padding: 6px 8px;
+      border: 1px solid var(--error);
+      color: var(--error);
+      font-size: 11px;
+      line-height: 1.5;
     }
-    .hint { font-size: 0.75rem; color: #555; text-align: center; margin-top: 4px; }
-    .dim { opacity: 0.4; pointer-events: none; }
   </style>
 </head>
 <body>
-  <h1>DatamoshLive</h1>
-  <p class="subtitle">Real-time VP8 / VP9 / H.264 datamosh via WebCodecs</p>
+<div id="layout">
+  <div id="canvas-area"></div>
 
-  <div id="warn-no-webcodecs">
-    WebCodecs not available — use Chrome / Edge 94+ over HTTPS or localhost.
+  <div id="panel">
+    <div id="panel-head">
+      <span class="title">datamosh<em>live</em></span>
+      <a href="https://geikha.xyz" target="_blank" rel="noopener">by geikha</a>
+      <span id="status">no source</span>
+    </div>
+
+    <div id="warn">webcodecs unavailable — use chrome / edge 94+ over https or localhost</div>
+
+    <!-- SOURCE -->
+    <div class="section">
+      <div class="section-label">source</div>
+      <div class="row">
+        <input id="cam-input" type="text" value="0" title="camera index or name" />
+        <button id="btn-cam">init cam</button>
+        <button id="btn-file">init video</button>
+        <input type="file" id="file-input" accept="video/*" style="display:none" />
+      </div>
+      <div class="row">
+        <button id="btn-start">start</button>
+        <button id="btn-stop">stop</button>
+      </div>
+      <div class="row">
+        <button id="btn-sync">sync</button>
+      </div>
+    </div>
+
+    <!-- INTERACT -->
+    <div class="section">
+      <div class="section-label">interaction (on click)</div>
+      <div class="row">
+        <button id="btn-smear">smear</button>
+        <button id="btn-corrupt">corrupt</button>
+        <button id="btn-hold">hold</button>
+      </div>
+    </div>
+
+    <!-- OVERDELTA -->
+    <div class="section">
+      <div class="section-label">overdelta</div>
+      <div class="check-row">
+        <label><input type="checkbox" id="ctrl-enabled" checked /> enabled</label>
+      </div>
+      <div class="ctrl-row">
+        <span class="lbl">speed</span>
+        <input type="range" id="ctrl-speed" min="1" max="20" step="1" value="1" />
+        <span class="val" id="val-speed">1</span>
+      </div>
+    </div>
+
+    <!-- SMEAR -->
+    <div class="section">
+      <div class="section-label">auto-smear</div>
+      <div class="ctrl-row">
+        <span class="lbl">rate</span>
+        <input type="range" id="ctrl-smear" min="0" max="100" step="1" value="0" />
+        <span class="val" id="val-smear">0%</span>
+      </div>
+    </div>
+
+    <!-- CORRUPT -->
+    <div class="section">
+      <div class="section-label">auto-corrupt</div>
+      <div class="ctrl-row">
+        <span class="lbl">rate</span>
+        <input type="range" id="ctrl-corrupt" min="0" max="100" step="1" value="0" />
+        <span class="val" id="val-corrupt">0%</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="lbl">amount</span>
+        <input type="range" id="ctrl-amount" min="1" max="100" step="1" value="30" />
+        <span class="val" id="val-amount">30%</span>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="section">
+      <div class="section-label">settings</div>
+      <div class="ctrl-row">
+        <span class="lbl">fit</span>
+        <select id="ctrl-fit">
+          <option value="fill" selected>fill</option>
+          <option value="stretch">stretch</option>
+          <option value="fit">fit</option>
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <span class="lbl">fps</span>
+        <input type="range" id="ctrl-fps" min="0" max="60" step="1" value="30" />
+        <span class="val" id="val-fps">30</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="lbl">codec</span>
+        <select id="ctrl-codec">
+          <option value="vp8" selected>vp8</option>
+          <option value="vp9">vp9</option>
+          <option value="h264">h264</option>
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <span class="lbl">bitrate</span>
+        <input type="range" id="ctrl-bitrate" min="200" max="10000" step="200" value="1000" />
+        <span class="val" id="val-bitrate">1000k</span>
+      </div>
+    </div>
+
+    <!-- RESOLUTION -->
+    <div class="section">
+      <div class="section-label">resolution</div>
+      <div class="row">
+        <span class="lbl">render</span>
+        <input type="number" id="ctrl-rw" value="640" min="1" />
+        <input type="number" id="ctrl-rh" value="480" min="1" />
+      </div>
+    </div>
   </div>
+</div>
 
-  <div class="btn-row">
-    <button id="btn-camera">Use Camera</button>
-    <button id="btn-file" onclick="document.getElementById('file-upload').click()">Load Video</button>
-    <input type="file" id="file-upload" accept="video/*" style="display:none" />
-    <button id="btn-start">Start</button>
-    <button id="btn-stop">Stop</button>
-    <button id="btn-smear">Smear</button>
-    <button id="btn-corrupt">Corrupt</button>
-    <button id="btn-sync">Sync</button>
-  </div>
+<script src="../dist/datamoshlive.js"></script>
+<script>
+  const PANEL_W   = 256;
+  const MOBILE_BP = 680;
 
-  <div id="canvas-wrap"></div>
-  <p class="hint" id="hint">No source — use camera or load a video file.</p>
+  function isMobile() { return window.innerWidth <= MOBILE_BP; }
 
-  <div class="controls">
-    <div class="section-label">Effect</div>
-
-    <label class="full-row">
-      <span>speed <span class="val" id="val-speed">2</span></span>
-      <input type="range" id="ctrl-speed" min="1" max="20" step="1" value="2" />
-    </label>
-
-    <label>
-      <span>enabled</span>
-      <input type="checkbox" id="ctrl-enabled" checked />
-    </label>
-
-    <label>
-      <span>hold</span>
-      <input type="checkbox" id="ctrl-hold" />
-    </label>
-
-    <label>
-      <span>fit mode</span>
-      <select id="ctrl-fit">
-        <option value="stretch" selected>stretch</option>
-        <option value="fill">fill</option>
-        <option value="fit">fit</option>
-      </select>
-    </label>
-
-    <div class="section-label">Smear — keyframe drop</div>
-
-    <label id="label-smear-rate" class="full-row">
-      <span>smear rate <span class="val" id="val-smear-rate">0</span>%</span>
-      <input type="range" id="ctrl-smear-rate" min="0" max="100" step="1" value="0" />
-    </label>
-
-    <div class="section-label">Corrupt — packet loss</div>
-
-    <label id="label-corrupt-rate" class="full-row">
-      <span>corrupt rate <span class="val" id="val-corrupt-rate">0</span>%</span>
-      <input type="range" id="ctrl-corrupt-rate" min="0" max="100" step="1" value="0" />
-    </label>
-
-    <label id="label-corrupt-amount" class="full-row">
-      <span>corrupt amount <span class="val" id="val-corrupt-amount">30</span>%</span>
-      <input type="range" id="ctrl-corrupt-amount" min="1" max="100" step="1" value="30" />
-    </label>
-
-    <div class="section-label">Codec</div>
-
-    <label>
-      <span>codec</span>
-      <select id="ctrl-codec">
-        <option value="vp8" selected>VP8</option>
-        <option value="vp9">VP9</option>
-        <option value="h264">H.264 (experimental)</option>
-      </select>
-    </label>
-
-    <label class="full-row">
-      <span>bitrate <span class="val" id="val-bitrate">1000 kbps</span></span>
-      <input type="range" id="ctrl-bitrate" min="200" max="10000" step="200" value="1000" />
-    </label>
-
-    <div class="section-label">Render size <small style="color:#555;font-size:0.7rem;">(encoder / processing)</small></div>
-
-    <label>
-      <span>width</span>
-      <input type="number" id="ctrl-width" min="1" value="640" />
-    </label>
-    <label>
-      <span>height</span>
-      <input type="number" id="ctrl-height" min="1" value="480" />
-    </label>
-
-    <div class="section-label">Canvas size <small style="color:#555;font-size:0.7rem;">(output canvas)</small></div>
-
-    <label>
-      <span>canvas width</span>
-      <input type="number" id="ctrl-canvas-w" min="1" value="640" />
-    </label>
-    <label>
-      <span>canvas height</span>
-      <input type="number" id="ctrl-canvas-h" min="1" value="480" />
-    </label>
-
-    <div class="section-label">Timing</div>
-
-    <label class="full-row">
-      <span>fps limit <span class="val" id="val-fps">30</span></span>
-      <input type="range" id="ctrl-fps" min="0" max="60" step="1" value="30" />
-    </label>
-  </div>
-
-  <script src="../dist/datamoshlive.js"></script>
-  <script>
-    if (!window.VideoEncoder || !window.VideoDecoder) {
-      document.getElementById('warn-no-webcodecs').style.display = 'block';
+  function calcDisplaySize(renderW, renderH) {
+    const ar = renderW / renderH;
+    if (isMobile()) {
+      const w = window.innerWidth;
+      return { w, h: Math.round(w / ar) };
     }
+    const availW = window.innerWidth  - PANEL_W;
+    const availH = window.innerHeight;
+    let w = availW, h = Math.round(w / ar);
+    if (h > availH) { h = availH; w = Math.round(h * ar); }
+    return { w, h };
+  }
 
-    const dm = new DatamoshLive({ width: 640, height: 480 });
-    document.getElementById('canvas-wrap').appendChild(dm.canvas);
+  const RENDER_W = 640, RENDER_H = 480;
+  const { w: initW, h: initH } = calcDisplaySize(RENDER_W, RENDER_H);
 
-    dm.fps = parseInt(document.getElementById('ctrl-fps').value, 10);
+  const dm = new DatamoshLive({ width: RENDER_W, height: RENDER_H, canvasWidth: initW, canvasHeight: initH });
+  document.getElementById('canvas-area').appendChild(dm.canvas);
+  dm.fit = 'fill';
+  dm.fps = 30;
 
-    // ---- Source ----
+  function refreshCanvasSize() {
+    const { w, h } = calcDisplaySize(dm.width, dm.height);
+    dm.resizeCanvas(w, h);
+  }
 
-    document.getElementById('btn-camera').addEventListener('click', async () => {
-      try {
-        await dm.initCamera();
-        document.getElementById('hint').textContent = 'Camera active.';
-        setActive('btn-start');
-      } catch (err) { alert('Camera error: ' + err.message); }
+  window.addEventListener('resize', refreshCanvasSize);
+
+  // ---- WebCodecs check ----
+
+  if (!window.VideoEncoder || !window.VideoDecoder) {
+    document.getElementById('warn').style.display = 'block';
+  }
+
+  // ---- Helpers ----
+
+  function setStatus(msg, err = false) {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.classList.toggle('err', err);
+  }
+
+  function setActive(id) {
+    ['btn-start', 'btn-stop'].forEach(i =>
+      document.getElementById(i).classList.toggle('active', i === id)
+    );
+  }
+
+  // ---- Canvas interaction modes ----
+
+  let mode = null;
+  const modeButtons = ['btn-smear', 'btn-corrupt', 'btn-hold'];
+  const cursors = { smear: 'crosshair', corrupt: 'crosshair', hold: 'grab' };
+
+  function setMode(m) {
+    mode = (mode === m) ? null : m;
+    modeButtons.forEach(id => {
+      const key = id.replace('btn-', '');
+      document.getElementById(id).classList.toggle('active', mode === key);
     });
+    dm.canvas.style.cursor = mode ? cursors[mode] : 'default';
+    // release hold if switching away
+    if (mode !== 'hold') dm.hold = false;
+  }
 
-    document.getElementById('file-upload').addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      try {
-        await dm.initVideo(URL.createObjectURL(file));
-        document.getElementById('hint').textContent = 'Video: ' + file.name;
-        setActive('btn-start');
-      } catch (err) { alert('Video error: ' + err.message); }
-    });
+  document.getElementById('btn-smear').addEventListener('click',   () => setMode('smear'));
+  document.getElementById('btn-corrupt').addEventListener('click', () => setMode('corrupt'));
+  document.getElementById('btn-hold').addEventListener('click',    () => setMode('hold'));
 
-    // ---- Playback ----
+  dm.canvas.addEventListener('pointerdown', () => {
+    if (mode === 'smear')   dm.smear();
+    if (mode === 'corrupt') dm.corrupt();
+    if (mode === 'hold')    { dm.hold = true; dm.canvas.style.cursor = 'grabbing'; }
+  });
 
-    document.getElementById('btn-start').addEventListener('click', () => {
-      dm.start(); setActive('btn-start');
-    });
-    document.getElementById('btn-stop').addEventListener('click', () => {
-      dm.stop(); setActive('btn-stop');
-    });
-    // smear: force keyframe + drop it → temporary smear, auto-recovers in ~30 frames
-    document.getElementById('btn-smear').addEventListener('click', () => dm.smear());
-    // corrupt: zero out a chunk of the next delta frame payload
-    document.getElementById('btn-corrupt').addEventListener('click', () => dm.corrupt());
-    // sync: force keyframe + deliver it → clean reference, cancels any pending smear
-    document.getElementById('btn-sync').addEventListener('click', () => dm.sync());
+  dm.canvas.addEventListener('pointerup', () => {
+    if (mode === 'hold') { dm.hold = false; dm.canvas.style.cursor = 'grab'; }
+  });
 
-    function setActive(id) {
-      ['btn-start', 'btn-stop'].forEach(i =>
-        document.getElementById(i).classList.toggle('active', i === id)
-      );
+  dm.canvas.addEventListener('pointerleave', () => {
+    if (mode === 'hold') { dm.hold = false; dm.canvas.style.cursor = 'grab'; }
+  });
+
+  // ---- Source ----
+
+  document.getElementById('btn-cam').addEventListener('click', async () => {
+    const raw = document.getElementById('cam-input').value.trim();
+    const selector = /^\d+$/.test(raw) ? parseInt(raw, 10) : raw || 0;
+    setStatus('opening camera...');
+    await dm.initCamera(selector);
+    setStatus('camera ' + (raw || '0'));
+    setActive('btn-start');
+  });
+
+  document.getElementById('btn-file').addEventListener('click', () => {
+    document.getElementById('file-input').click();
+  });
+
+  document.getElementById('file-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setStatus('loading...');
+    await dm.initVideo(URL.createObjectURL(file));
+    setStatus(file.name);
+    setActive('btn-start');
+  });
+
+  // ---- Playback ----
+
+  document.getElementById('btn-start').addEventListener('click', () => { dm.start(); setActive('btn-start'); });
+  document.getElementById('btn-stop').addEventListener('click',  () => { dm.stop();  setActive('btn-stop');  });
+  document.getElementById('btn-sync').addEventListener('click',  () => dm.sync());
+
+  // ---- Overdelta ----
+
+  document.getElementById('ctrl-enabled').addEventListener('change', (e) => {
+    dm.enabled = e.target.checked;
+  });
+
+  document.getElementById('ctrl-speed').addEventListener('input', (e) => {
+    dm.speed = parseInt(e.target.value, 10);
+    document.getElementById('val-speed').textContent = e.target.value;
+  });
+
+  // ---- Auto-smear ----
+
+  document.getElementById('ctrl-smear').addEventListener('input', (e) => {
+    dm.smearRate = e.target.value / 100;
+    document.getElementById('val-smear').textContent = e.target.value + '%';
+  });
+
+  // ---- Auto-corrupt ----
+
+  document.getElementById('ctrl-corrupt').addEventListener('input', (e) => {
+    dm.corruptRate = e.target.value / 100;
+    document.getElementById('val-corrupt').textContent = e.target.value + '%';
+  });
+
+  document.getElementById('ctrl-amount').addEventListener('input', (e) => {
+    dm.corruptAmount = e.target.value / 100;
+    document.getElementById('val-amount').textContent = e.target.value + '%';
+  });
+
+  // ---- Settings ----
+
+  document.getElementById('ctrl-fit').addEventListener('change', (e) => { dm.fit = e.target.value; });
+
+  document.getElementById('ctrl-fps').addEventListener('input', (e) => {
+    dm.fps = parseInt(e.target.value, 10);
+    document.getElementById('val-fps').textContent = e.target.value === '0' ? '∞' : e.target.value;
+  });
+
+  document.getElementById('ctrl-codec').addEventListener('change', (e) => { dm.codec = e.target.value; });
+
+  document.getElementById('ctrl-bitrate').addEventListener('input', (e) => {
+    document.getElementById('val-bitrate').textContent = e.target.value + 'k';
+  });
+  document.getElementById('ctrl-bitrate').addEventListener('change', (e) => {
+    dm.bitrate = parseInt(e.target.value, 10) * 1000;
+  });
+
+  // ---- Resolution ----
+
+  function applyRenderSize() {
+    const w = parseInt(document.getElementById('ctrl-rw').value, 10);
+    const h = parseInt(document.getElementById('ctrl-rh').value, 10);
+    if (w > 0 && h > 0) {
+      dm.setResolution(w, h);
+      refreshCanvasSize();
     }
-
-    // ---- Effect ----
-
-    document.getElementById('ctrl-speed').addEventListener('input', (e) => {
-      const v = parseInt(e.target.value, 10);
-      dm.speed = v;
-      document.getElementById('val-speed').textContent = v;
-    });
-
-    document.getElementById('ctrl-enabled').addEventListener('change', (e) => {
-      dm.enabled = e.target.checked;
-    });
-
-    document.getElementById('ctrl-hold').addEventListener('change', (e) => {
-      dm.hold = e.target.checked;
-    });
-
-    document.getElementById('ctrl-fit').addEventListener('change', (e) => {
-      dm.fit = e.target.value;
-    });
-
-    // ---- Smear ----
-
-    document.getElementById('ctrl-smear-rate').addEventListener('input', (e) => {
-      const v = parseInt(e.target.value, 10);
-      dm.smearRate = v / 100;
-      document.getElementById('val-smear-rate').textContent = v;
-    });
-
-    // ---- Corrupt ----
-
-    document.getElementById('ctrl-corrupt-rate').addEventListener('input', (e) => {
-      const v = parseInt(e.target.value, 10);
-      dm.corruptRate = v / 100;
-      document.getElementById('val-corrupt-rate').textContent = v;
-    });
-
-    document.getElementById('ctrl-corrupt-amount').addEventListener('input', (e) => {
-      const v = parseInt(e.target.value, 10);
-      dm.corruptAmount = v / 100;
-      document.getElementById('val-corrupt-amount').textContent = v;
-    });
-
-    // ---- Codec ----
-
-    document.getElementById('ctrl-codec').addEventListener('change', (e) => {
-      const codec = e.target.value;
-      console.log('Switching to codec:', codec);
-      try {
-        dm.codec = e.target.value;
-        console.log('Codec switched successfully');
-      } catch (err) {
-        console.error('Codec switch failed:', err);
-      }
-    });
-
-    document.getElementById('ctrl-bitrate').addEventListener('change', (e) => {
-      const kbps = parseInt(e.target.value, 10);
-      dm.bitrate = kbps * 1000;
-      document.getElementById('val-bitrate').textContent = kbps + ' kbps';
-    });
-    document.getElementById('ctrl-bitrate').addEventListener('input', (e) => {
-      document.getElementById('val-bitrate').textContent = e.target.value + ' kbps';
-    });
-
-    // ---- Render size ----
-
-    function applyRenderSize() {
-      const w = parseInt(document.getElementById('ctrl-width').value, 10);
-      const h = parseInt(document.getElementById('ctrl-height').value, 10);
-      if (w > 0 && h > 0) dm.setResolution(w, h);
-    }
-    document.getElementById('ctrl-width').addEventListener('change', applyRenderSize);
-    document.getElementById('ctrl-height').addEventListener('change', applyRenderSize);
-
-    // ---- Canvas size ----
-
-    function applyCanvasSize() {
-      const w = parseInt(document.getElementById('ctrl-canvas-w').value, 10);
-      const h = parseInt(document.getElementById('ctrl-canvas-h').value, 10);
-      if (w > 0 && h > 0) dm.resizeCanvas(w, h);
-    }
-    document.getElementById('ctrl-canvas-w').addEventListener('change', applyCanvasSize);
-    document.getElementById('ctrl-canvas-h').addEventListener('change', applyCanvasSize);
-
-    // ---- FPS ----
-
-    document.getElementById('ctrl-fps').addEventListener('input', (e) => {
-      const v = parseInt(e.target.value, 10);
-      dm.fps = v;
-      document.getElementById('val-fps').textContent = v === 0 ? 'unlimited' : v;
-    });
-  </script>
+  }
+  document.getElementById('ctrl-rw').addEventListener('change', applyRenderSize);
+  document.getElementById('ctrl-rh').addEventListener('change', applyRenderSize);
+</script>
 </body>
 </html>

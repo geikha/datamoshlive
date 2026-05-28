@@ -102,15 +102,13 @@ class DatamoshPipeline {
     this._width   = opts.width;
     this._height  = opts.height;
     this._bitrate = opts.bitrate || 1_000_000;
-    let codec = resolveCodec(opts.codec || 'vp8');
-    // For H.264, pick AVC level based on resolution.
-    if (codec.startsWith('avc')) {
-      codec = getH264CodecString(this._width, this._height);
-    }
-    this._codec = codec;
-    this._lastValidCodec = codec;
-    this._encoder = null;
-    this._decoder = null;
+    this._codec   = this._resolveCodec(opts.codec || 'vp8');
+    this._lastValidCodec = this._codec;
+    this._init();
+  }
+
+  // Reset all per-stream effect/state flags to their initial values.
+  _resetState() {
     this._nextKeyFrame        = true;
     this._dropNextKeyFrame    = false;
     this._deliverNextKeyFrame = false;
@@ -120,7 +118,14 @@ class DatamoshPipeline {
     this._corruptNext         = false;
     this._holding      = false;
     this._waitForDelta = false;
-    this._init();
+  }
+
+  // Resolve a codec name and, for H.264, normalize to the resolution-appropriate AVC level.
+  _resolveCodec(codec) {
+    const resolved = resolveCodec(codec, this._lastValidCodec);
+    return resolved.startsWith('avc')
+      ? getH264CodecString(this._width, this._height)
+      : resolved;
   }
 
   _init() {
@@ -159,15 +164,7 @@ class DatamoshPipeline {
     });
     this._encoder.configure(encoderConfig);
 
-    this._nextKeyFrame        = true;
-    this._dropNextKeyFrame    = false;
-    this._deliverNextKeyFrame = false;
-    this._gotFirstKeyFrame    = false;
-    this._smearPending        = false;
-    this._recoverAfterDeltas  = 0;
-    this._corruptNext         = false;
-    this._holding      = false;
-    this._waitForDelta = false;
+    this._resetState();
   }
 
   _handleChunk(chunk) {
@@ -239,15 +236,14 @@ class DatamoshPipeline {
     }
 
     let outChunk = chunk;
-    const corruptRate   = resolveParam(this._params.corruptRate,   'corruptRate');
-    const corruptAmount = resolveParam(this._params.corruptAmount, 'corruptAmount');
+    const corruptRate = resolveParam(this._params.corruptRate, 'corruptRate');
 
     if (this._corruptNext) {
       this._corruptNext = false;
-      outChunk = this._corruptChunk(chunk, corruptAmount);
+      outChunk = this._corruptChunk(chunk, resolveParam(this._params.corruptAmount, 'corruptAmount'));
       this._recoverAfterDeltas = Math.max(this._recoverAfterDeltas, 30);
     } else if (corruptRate > 0 && Math.random() < corruptRate) {
-      outChunk = this._corruptChunk(chunk, corruptAmount);
+      outChunk = this._corruptChunk(chunk, resolveParam(this._params.corruptAmount, 'corruptAmount'));
       this._recoverAfterDeltas = Math.max(this._recoverAfterDeltas, 30);
     }
 
@@ -334,24 +330,23 @@ class DatamoshPipeline {
     }
     if (bitrate != null) this._bitrate = Math.max(1, bitrate);
     if (codec   != null) {
-      let resolved = resolveCodec(codec, this._lastValidCodec);
-      // For H.264, recalculate AVC level based on new resolution.
-      if (resolved.startsWith('avc')) {
-        resolved = getH264CodecString(this._width, this._height);
-      }
-      this._codec = resolved;
-      this._lastValidCodec = resolved;
+      this._codec = this._resolveCodec(codec);
+      this._lastValidCodec = this._codec;
     } else if (resolutionChanged && this._codec.startsWith('avc')) {
       // Resolution changed while using H.264 — recalculate appropriate AVC level.
       this._codec = getH264CodecString(this._width, this._height);
       this._lastValidCodec = this._codec;
     }
-    try { if (this._encoder?.state !== 'closed') this._encoder.close(); } catch (_) {}
-    try { if (this._decoder?.state !== 'closed') this._decoder.close(); } catch (_) {}
+    this._closeCodecs();
     this._init();
   }
 
   destroy() {
+    this._closeCodecs();
+  }
+
+  // Close encoder and decoder if open, swallowing teardown errors.
+  _closeCodecs() {
     try { if (this._encoder?.state !== 'closed') this._encoder.close(); } catch (_) {}
     try { if (this._decoder?.state !== 'closed') this._decoder.close(); } catch (_) {}
   }
@@ -468,7 +463,7 @@ class DatamoshInput {
 /**
  * DatamoshLive — Real-time datamosh effect using WebCodecs (VP8 / VP9 / H.264).
  *
- *   const dm = new DatamoshLive({ renderWidth: 640, renderHeight: 480 });
+ *   const dm = new DatamoshLive({ width: 640, height: 480 });
  *   await dm.initCamera();
  *   dm.smear();        // one-shot smear, auto-recovers
  *   dm.smearRate = 0.5 // continuous probabilistic smearing (0 = off)
@@ -494,21 +489,21 @@ const QUEUE_OVERLOAD_FACTOR = 2;
 class DatamoshLive {
   /**
    * @param {Object} opts
-   * @param {number}  [opts.renderWidth=640]   - Encoder / processing width
-   * @param {number}  [opts.renderHeight=480]  - Encoder / processing height
-   * @param {number}  [opts.displayWidth]      - Output canvas width  (defaults to renderWidth)
-   * @param {number}  [opts.displayHeight]     - Output canvas height (defaults to renderHeight)
+   * @param {number}  [opts.width=640]         - Encoder / processing width
+   * @param {number}  [opts.height=480]        - Encoder / processing height
+   * @param {number}  [opts.canvasWidth]       - Output canvas width  (defaults to width)
+   * @param {number}  [opts.canvasHeight]      - Output canvas height (defaults to height)
    * @param {HTMLCanvasElement} [opts.canvas]  - Existing canvas element to use
    * @param {Object}  [opts.params]            - Initial parameter overrides
    */
   constructor(opts = {}) {
-    const rw = opts.renderWidth  || opts.width  || 640;
-    const rh = opts.renderHeight || opts.height || 480;
+    const w = opts.width  || 640;
+    const h = opts.height || 480;
 
-    this.renderWidth  = rw;
-    this.renderHeight = rh;
-    this.displayWidth  = opts.displayWidth  || rw;
-    this.displayHeight = opts.displayHeight || rh;
+    this.width  = w;
+    this.height = h;
+    this.canvasWidth  = opts.canvasWidth  || w;
+    this.canvasHeight = opts.canvasHeight || h;
 
     this._looping       = false;
     this._rafId         = null;
@@ -521,25 +516,25 @@ class DatamoshLive {
     this.params = { ...DEFAULT_PARAMS, ...(opts.params || {}) };
 
     this.canvas = opts.canvas || document.createElement('canvas');
-    this.canvas.width  = this.displayWidth;
-    this.canvas.height = this.displayHeight;
+    this.canvas.width  = this.canvasWidth;
+    this.canvas.height = this.canvasHeight;
     this._ctx = this.canvas.getContext('2d');
 
     this._offscreen       = document.createElement('canvas');
-    this._offscreen.width  = this.renderWidth;
-    this._offscreen.height = this.renderHeight;
+    this._offscreen.width  = this.width;
+    this._offscreen.height = this.height;
     this._offscreenCtx    = this._offscreen.getContext('2d');
 
     this._input = new DatamoshInput();
 
     this._pipeline = new DatamoshPipeline({
-      width:   this.renderWidth,
-      height:  this.renderHeight,
+      width:   this.width,
+      height:  this.height,
       bitrate: this.params.bitrate,
       codec:   this.params.codec,
       params:  this.params,
       onFrame: (frame) => {
-        this._ctx.drawImage(frame, 0, 0, this.displayWidth, this.displayHeight);
+        this._ctx.drawImage(frame, 0, 0, this.canvasWidth, this.canvasHeight);
       },
     });
   }
@@ -551,7 +546,7 @@ class DatamoshLive {
 
     const enabled = this._resolveParam('enabled');
     if (!enabled) {
-      this._input.capture(this._ctx, this.displayWidth, this.displayHeight);
+      this._input.capture(this._ctx, this.canvasWidth, this.canvasHeight);
       return;
     }
 
@@ -571,7 +566,7 @@ class DatamoshLive {
       this._pipeline.requestKeyFrame();
     }
 
-    const drawn = this._input.capture(this._offscreenCtx, this.renderWidth, this.renderHeight);
+    const drawn = this._input.capture(this._offscreenCtx, this.width, this.height);
     if (!drawn) return;
 
     if (this._pipeline._encoder?.state === 'closed') return;
@@ -591,22 +586,62 @@ class DatamoshLive {
 
   // ---- Source init ----
 
-  async initCamera(opts = {}) {
+  async initCamera(selector = 0, opts = {}) {
     try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cameras = devices.filter((d) => d.kind === 'videoinput');
+
+      let device;
+      if (typeof selector === 'number') {
+        device = cameras[selector];
+      } else if (typeof selector === 'string') {
+        // Exact match first
+        device = cameras.find((d) => d.label === selector);
+        // Fallback to includes match
+        if (!device) {
+          device = cameras.find((d) => d.label.toLowerCase().includes(selector.toLowerCase()));
+        }
+      }
+
       const constraints = opts.constraints || {
-        video: { width: { ideal: this.renderWidth }, height: { ideal: this.renderHeight } },
+        video: device
+          ? { deviceId: { exact: device.deviceId }, width: { ideal: this.width }, height: { ideal: this.height } }
+          : { width: { ideal: this.width }, height: { ideal: this.height } },
       };
+
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      const video  = document.createElement('video');
-      video.srcObject   = stream;
-      video.muted       = true;
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.muted = true;
       video.playsInline = true;
-      await video.play();
-      this._input.setCamera(video, stream);
-      this._frameCount = 0;
-      this._pipeline.reset();
-      if (opts.autoStart !== false) this.start();
-      return video;
+
+      return new Promise((resolve) => {
+        const cleanup = () => {
+          video.removeEventListener('loadeddata', onLoadedData);
+          video.removeEventListener('error', onError);
+        };
+
+        const onLoadedData = () => {
+          cleanup();
+          this._input.setCamera(video, stream);
+          this._frameCount = 0;
+          this._pipeline.reset();
+          if (opts.autoStart !== false) this.start();
+          resolve(video);
+        };
+
+        const onError = (e) => {
+          cleanup();
+          console.warn('DatamoshLive.initCamera: video error:', e);
+          resolve(video);
+        };
+
+        video.addEventListener('loadeddata', onLoadedData, { once: true });
+        video.addEventListener('error', onError, { once: true });
+        video.play().catch((e) => {
+          console.warn('DatamoshLive.initCamera: play() blocked:', e);
+        });
+      });
     } catch (err) {
       console.warn('DatamoshLive.initCamera:', err);
     }
@@ -719,11 +754,6 @@ class DatamoshLive {
     this._frameInterval = this._fps > 0 ? 1000 / this._fps : 0;
   }
 
-  get width()          { return this.renderWidth; }
-  set width(v)         { this.setResolution(v, this.renderHeight); }
-
-  get height()         { return this.renderHeight; }
-  set height(v)        { this.setResolution(this.renderWidth, v); }
 
   // Force keyframe + deliver it → clean sync, cancels any pending smear.
   sync()    { this._pipeline.sync(); }
@@ -739,9 +769,9 @@ class DatamoshLive {
   setResolution(width, height) {
     const w = Math.max(1, Math.floor(width));
     const h = Math.max(1, Math.floor(height));
-    if (w === this.renderWidth && h === this.renderHeight) return;
-    this.renderWidth       = w;
-    this.renderHeight      = h;
+    if (w === this.width && h === this.height) return;
+    this.width       = w;
+    this.height      = h;
     this._offscreen.width  = w;
     this._offscreen.height = h;
     this._offscreenCtx = this._offscreen.getContext('2d');
@@ -753,9 +783,9 @@ class DatamoshLive {
   resizeCanvas(width, height) {
     const w = Math.max(1, Math.floor(width));
     const h = Math.max(1, Math.floor(height));
-    if (w === this.displayWidth && h === this.displayHeight) return;
-    this.displayWidth  = w;
-    this.displayHeight = h;
+    if (w === this.canvasWidth && h === this.canvasHeight) return;
+    this.canvasWidth  = w;
+    this.canvasHeight = h;
     this.canvas.width  = w;
     this.canvas.height = h;
     this._ctx = this.canvas.getContext('2d');
