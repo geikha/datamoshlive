@@ -1,8 +1,8 @@
 {
-  "name": "datamoshlive",
+  "name": "@geikha/datamoshlive",
   "version": "0.1.0",
   "type": "module",
-  "description": "Real-time datamosh effect via WebCodecs VP8",
+  "description": "Real-time datamosh effects in the browser using WebCodecs",
   "main": "dist/datamoshlive.js",
   "module": "dist/datamoshlive.esm.js",
   "exports": {
@@ -11,6 +11,14 @@
       "default": "./dist/datamoshlive.js"
     }
   },
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/geikha/datamoshlive"
+  },
+  "keywords": ["datamosh", "webcodecs", "video", "effect"],
+  "author": "geikha",
+  "license": "GPL-3.0-or-later",
   "scripts": {
     "build": "rollup -c",
     "dev":   "rollup -c --watch",
