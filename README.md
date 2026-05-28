@@ -28,7 +28,7 @@ Or drop the built file in directly:
 ```js
 const dm = new DatamoshLive({ width: 640, height: 480 });
 document.body.appendChild(dm.canvas);
-await dm.initCamera();
+await dm.initCam();
 
 // Click to smear
 dm.canvas.addEventListener('click', () => dm.drop());
@@ -103,7 +103,7 @@ const dm = new DatamoshLive(opts)
 
 All source methods are async. The loop starts automatically unless you pass `autoStart: false`.
 
-#### `await dm.initCamera(selector?, opts?)`
+#### `await dm.initCam(selector?, opts?)`
 Open a webcam. `selector` is a camera index (number, default `0`) or a label string.
 
 #### `await dm.initVideo(source, opts?)`

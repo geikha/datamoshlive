@@ -2,7 +2,7 @@
  * DatamoshLive — Real-time datamosh effect using WebCodecs (VP8 / VP9 / H.264).
  *
  *   const dm = new DatamoshLive({ width: 640, height: 480 });
- *   await dm.initCamera();
+ *   await dm.initCam();
  *   dm.drop();         // one-shot frame drop, auto-recovers
  *   dm.dropRate = 0.5  // continuous probabilistic dropping (0 = off)
  */
@@ -128,21 +128,34 @@ export default class DatamoshLive {
 
   // ---- Source init ----
 
-  async initCamera(selector = 0, opts = {}) {
+  async initCam(selector = 0, opts = {}) {
     try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cameras = devices.filter((d) => d.kind === 'videoinput');
+      async function getCameras() {
+        let devices = await navigator.mediaDevices.enumerateDevices();
+        let cameras = devices.filter((d) => d.kind === 'videoinput');
+        if (!cameras.some((d) => d.deviceId)) {
+          // Permission not yet granted — trigger prompt, stop immediately, re-enumerate
+          const temp = await navigator.mediaDevices.getUserMedia({ video: true });
+          temp.getTracks().forEach((t) => t.stop());
+          devices = await navigator.mediaDevices.enumerateDevices();
+          cameras = devices.filter((d) => d.kind === 'videoinput');
+        }
+        return cameras;
+      }
+
+      const cameras = await getCameras();
 
       let device;
       if (typeof selector === 'number') {
         device = cameras[selector];
       } else if (typeof selector === 'string') {
-        // Exact match first
         device = cameras.find((d) => d.label === selector);
-        // Fallback to includes match
-        if (!device) {
-          device = cameras.find((d) => d.label.toLowerCase().includes(selector.toLowerCase()));
-        }
+        if (!device) device = cameras.find((d) => d.label.toLowerCase().includes(selector.toLowerCase()));
+      }
+
+      if (!device && cameras.length === 0) {
+        console.warn('DatamoshLive.initCam: no cameras found');
+        return;
       }
 
       const constraints = opts.constraints || {
@@ -152,6 +165,7 @@ export default class DatamoshLive {
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
       const video = document.createElement('video');
       video.srcObject = stream;
       video.muted = true;
@@ -174,18 +188,20 @@ export default class DatamoshLive {
 
         const onError = (e) => {
           cleanup();
-          console.warn('DatamoshLive.initCamera: video error:', e);
+          console.warn('DatamoshLive.initCam: video error:', e);
           resolve(video);
         };
 
         video.addEventListener('loadeddata', onLoadedData, { once: true });
         video.addEventListener('error', onError, { once: true });
         video.play().catch((e) => {
-          console.warn('DatamoshLive.initCamera: play() blocked:', e);
+          console.warn('DatamoshLive.initCam: play() blocked:', e);
         });
       });
     } catch (err) {
-      console.warn('DatamoshLive.initCamera:', err);
+      const msg = `Camera error: ${err.name || 'unknown'} - ${err.message || err}`;
+      console.error('DatamoshLive.initCam:', msg);
+      throw err;
     }
   }
 

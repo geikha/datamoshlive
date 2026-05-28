@@ -546,7 +546,7 @@
     const raw = document.getElementById('cam-input').value.trim();
     const selector = /^\d+$/.test(raw) ? parseInt(raw, 10) : raw || 0;
     setStatus('opening camera...');
-    await dm.initCamera(selector);
+    await dm.initCam(selector);
     setStatus('camera ' + (raw || '0'));
     setActive('btn-start');
   });
