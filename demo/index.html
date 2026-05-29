@@ -706,7 +706,10 @@
     document.getElementById('val-fps').textContent = e.target.value === '0' ? '∞' : e.target.value;
   });
 
-  document.getElementById('ctrl-codec').addEventListener('change', (e) => { dm.codec = e.target.value; });
+  document.getElementById('ctrl-codec').addEventListener('change', (e) => {
+    if (dm.hold) dm.hold = false;
+    dm.codec = e.target.value;
+  });
 
   document.getElementById('ctrl-bitrate').addEventListener('input', (e) => {
     document.getElementById('val-bitrate').textContent = e.target.value + 'k';
@@ -721,6 +724,7 @@
     const w = parseInt(document.getElementById('ctrl-rw').value, 10);
     const h = parseInt(document.getElementById('ctrl-rh').value, 10);
     if (w > 0 && h > 0) {
+      if (dm.hold) dm.hold = false;
       dm.setResolution(w, h);
       refreshCanvasSize();
     }
