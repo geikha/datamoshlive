@@ -69,7 +69,14 @@
         min-height: 100vh;
       }
 
-      #canvas-area { flex: none; }
+      #canvas-area {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 10;
+        flex: none;
+      }
 
       #panel {
         width: 100%;
@@ -78,7 +85,23 @@
         overflow-y: visible;
         border-left: none;
         border-top: 1px solid var(--border);
+        margin-top: var(--canvas-display-height, 320px);
       }
+
+      /* Spacing */
+      .section { padding: 12px; }
+      .row { margin-bottom: 14px; }
+      .ctrl-row { margin-bottom: 14px; }
+      .ctrl-row:has(input[type="range"]):not(:first-child) { margin-top: 14px; }
+      .ctrl-row:last-child:not(:has(input[type="range"])) { margin-bottom: 0; }
+      .check-row:not(:last-child) { margin-bottom: 14px; }
+
+      /* Typography & touch targets */
+      button { font-size: 14px; padding: 6px 12px; min-height: 40px; }
+      select { font-size: 14px; padding: 6px 8px; min-height: 40px; flex: 1; }
+      input[type="number"] { font-size: 14px; padding: 6px 8px; min-height: 40px; width: auto; flex: 1; }
+      .check-row label { font-size: 13px; padding: 6px 12px; min-height: 40px; flex: 1; }
+      #cam-input { font-size: 14px; padding: 6px 8px; min-height: 40px; width: auto; flex: 1; }
     }
 
     /* ---- panel header ---- */
@@ -156,7 +179,7 @@
       display: flex;
       align-items: center;
       gap: 4px;
-      margin-bottom: 5px;
+      margin-bottom: 10px;
     }
     .row:last-child { margin-bottom: 0; }
     .row button { flex: 1; }
@@ -200,7 +223,8 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      margin-bottom: 5px;
+      margin-top: 8px;
+      margin-bottom: 8px;
     }
     .ctrl-row:last-child { margin-bottom: 0; }
 
@@ -227,24 +251,46 @@
     /* ---- checkbox row ---- */
     .check-row {
       display: flex;
-      gap: 16px;
-      margin-bottom: 5px;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 10px;
     }
     .check-row:last-child { margin-bottom: 0; }
 
     .check-row label {
+      font-family: inherit;
+      font-size: 11px;
+      background: var(--bg-2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 3px 8px;
+      cursor: pointer;
+      outline: none;
+      letter-spacing: 0.3px;
       display: flex;
       align-items: center;
-      gap: 5px;
-      color: var(--fg-dim);
-      font-size: 11px;
-      cursor: pointer;
+      justify-content: center;
+      user-select: none;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .check-row label:hover {
+      border-color: var(--fg-dim);
+    }
+
+    .check-row label:active {
+      background: var(--bg-3);
     }
 
     input[type="checkbox"] {
-      accent-color: var(--accent);
-      width: 12px; height: 12px;
-      cursor: pointer;
+      display: none;
+    }
+
+    .check-row label:has(input[type="checkbox"]:checked) {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: var(--bg-3);
     }
 
     /* ---- select ---- */
@@ -268,7 +314,7 @@
       color: var(--fg);
       border: 1px solid var(--border);
       padding: 2px 4px;
-      width: 58px;
+      width: 70px;
       outline: none;
     }
     input[type="number"]:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
@@ -322,6 +368,9 @@
       <div class="row">
         <button id="btn-sync">sync</button>
       </div>
+      <div class="check-row">
+        <label><input type="checkbox" id="ctrl-enabled" checked /> enabled</label>
+      </div>
     </div>
 
     <!-- INTERACT -->
@@ -337,9 +386,6 @@
     <!-- OVERDELTA -->
     <div class="section">
       <div class="section-label">overdelta</div>
-      <div class="check-row">
-        <label><input type="checkbox" id="ctrl-enabled" checked /> enabled</label>
-      </div>
       <div class="ctrl-row">
         <span class="lbl">speed</span>
         <input type="range" id="ctrl-speed" min="1" max="20" step="1" value="1" />
@@ -482,9 +528,13 @@
   function refreshCanvasSize() {
     const { w, h } = calcDisplaySize(dm.width, dm.height);
     dm.resizeCanvas(w, h);
+    if (isMobile()) {
+      document.documentElement.style.setProperty('--canvas-display-height', h + 'px');
+    }
   }
 
   window.addEventListener('resize', refreshCanvasSize);
+  refreshCanvasSize(); // Set initial mobile canvas height
 
   // ---- WebCodecs check ----
 
