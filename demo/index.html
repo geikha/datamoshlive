@@ -686,7 +686,7 @@
   localScript.onerror = () => {
     // Local failed, load from unpkg
     const cdnScript = document.createElement('script');
-    cdnScript.src = 'https://unpkg.com/@geikha/datamoshlive@latest/dist/datamoshlive.js';
+    cdnScript.src = 'https://unpkg.com/datamoshlive@latest/dist/datamoshlive.js';
     cdnScript.onload = initDemo;
     document.head.appendChild(cdnScript);
   };

@@ -1,5 +1,5 @@
 {
-  "name": "@geikha/datamoshlive",
+  "name": "datamoshlive",
   "version": "0.1.2",
   "type": "module",
   "description": "Real-time datamosh effects in the browser using WebCodecs",
