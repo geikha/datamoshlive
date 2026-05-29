@@ -2,6 +2,8 @@
 
 Real-time datamosh effects in the browser using WebCodecs. Feed it a camera or video, trigger drops and corruptions, watch frames smear.
 
+![DatamoshLive demo](demo/dml-demo-img.jpg)
+
 **Requires** Chrome / Edge 94+ over HTTPS or localhost.
 
 **Credits:** Over-delta technique by [Amagi](https://codepen.io/fand/pen/Vwojwqm). Inspired by [Hydra Datamosh](https://github.com/emptyflash/hydra-datamosh) (Emptyflash) and [Hydra Synth](https://github.com/hydra-synth/hydra). API design and H.264 implementation by [geikha](https://github.com/geikha). General implementation and documentation done using Claude Code.
