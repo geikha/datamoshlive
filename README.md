@@ -17,10 +17,10 @@ npm install datamoshlive
 npm run build   # → dist/datamoshlive.js + dist/datamoshlive.esm.js
 ```
 
-Or drop the built file in directly:
+Or use the CDN:
 
 ```html
-<script src="dist/datamoshlive.js"></script>
+<script src="https://unpkg.com/datamoshlive@latest/dist/datamoshlive.js"></script>
 ```
 
 ---
@@ -29,14 +29,14 @@ Or drop the built file in directly:
 
 ```js
 const dm = new DatamoshLive({ width: 640, height: 480 });
-document.body.appendChild(dm.canvas);
+dm.mount();  // append to document.body (or pass a custom parent element)
 await dm.initCam();
 
 // Click to smear
 dm.canvas.addEventListener('click', () => dm.drop());
 ```
 
-That's it. `dm.canvas` is a plain `<canvas>` — size and position it however you want.
+That's it. `dm.canvas` is a plain `<canvas>` — customize size and positioning as needed.
 
 ---
 
@@ -227,11 +227,18 @@ Resize the output canvas. Does not reset the codec.
 
 ### Display
 
+Remove `dm.canvas` from the DOM.
+
 #### `dm.show()` / `dm.hide()`
-Append or remove `dm.canvas` from `document.body`.
+Shortcuts: `show()` calls `mount()`, `hide()` calls `unmount()`.
 
 #### `dm.destroy()`
 Stop the loop, remove the canvas, close the encoder/decoder.
+
+#### `dm.mount(parent?)`
+Append `dm.canvas` to a DOM element (defaults to `document.body`). Positions canvas absolutely at top-left. Throws an error if parent is not an HTMLElement.
+
+#### `dm.unmount()`
 
 ---
 

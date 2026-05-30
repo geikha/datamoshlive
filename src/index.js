@@ -412,16 +412,32 @@ export default class DatamoshLive {
 
   // ---- Display ----
 
-  show() {
-    if (this._shown) return;
+  mount(parent = document.body) {
+    if (!parent || !(parent instanceof HTMLElement)) {
+      throw new Error('DatamoshLive.mount: parent must be an HTMLElement');
+    }
+    if (this.canvas.parentNode !== parent) {
+      parent.appendChild(this.canvas);
+      this.canvas.style.position = 'absolute';
+      this.canvas.style.top = '0';
+      this.canvas.style.left = '0';
+    }
     this._shown = true;
-    document.body.appendChild(this.canvas);
+  }
+
+  unmount() {
+    if (this.canvas.parentNode) {
+      this.canvas.parentNode.removeChild(this.canvas);
+    }
+    this._shown = false;
+  }
+
+  show() {
+    this.mount();
   }
 
   hide() {
-    if (!this._shown) return;
-    this._shown = false;
-    this.canvas.parentNode?.removeChild(this.canvas);
+    this.unmount();
   }
 
   destroy() {
