@@ -147,8 +147,6 @@ class DatamoshPipeline {
     this._dropNext            = false;
     this._recoverAfterDeltas  = 0;
     this._corruptNext         = false;
-    this._holding             = false;
-    this._waitForDelta        = false;
     this._samplesNeeded       = 0;
     this._injecting           = false;
     this._injectIndex         = 0;
@@ -212,23 +210,19 @@ class DatamoshPipeline {
   _handleChunk(chunk) {
     if (!this._decoder || this._decoder.state === 'closed') return;
 
-    // Hold: drop everything, freeze last drawn frame.
-    if (resolveParam(this._params.hold, 'hold')) {
-      this._holding = true;
-      return;
-    }
-
-    // After un-hold: skip keyframes until the first delta runs over the frozen image.
-    if (this._waitForDelta) {
-      if (chunk.type === 'key') return;
-      this._waitForDelta = false;
-    }
-
-    // Bootstrap: decoder needs one keyframe to establish its initial reference.
+    // Bootstrap: decoder needs one keyframe to establish its initial reference,
+    // even while holding — otherwise hold could swallow the only keyframe ever
+    // requested and starve the decoder permanently once un-held.
     if (!this._gotFirstKeyFrame) {
       if (chunk.type !== 'key') return;
       this._gotFirstKeyFrame = true;
       this._decoder.decode(chunk);
+      return;
+    }
+
+    // Hold: drop everything, freeze last drawn frame. Resumes on whatever
+    // chunk arrives next once un-held — no special-cased wait state.
+    if (resolveParam(this._params.hold, 'hold')) {
       return;
     }
 
@@ -316,17 +310,9 @@ class DatamoshPipeline {
   encode(frame) {
     if (!this._encoder || this._encoder.state === 'closed') return;
 
-    const prevHolding = this._holding;
-    const nowHolding  = resolveParam(this._params.hold, 'hold');
-    if (prevHolding && !nowHolding) {
-      this._waitForDelta = true;
-      this._startRecovery();
-    }
-    this._holding = nowHolding;
-
     // Inject: replay sample buffer instead of encoding the live frame.
     if (this._injecting) {
-      if (nowHolding || this._sampleBuffer.length === 0) return;
+      if (resolveParam(this._params.hold, 'hold') || this._sampleBuffer.length === 0) return;
       const sampleLoop = resolveParam(this._params.sampleLoop, 'sampleLoop');
       const bufLen = this._sampleBuffer.length;
       if (this._injectIndex >= bufLen && !sampleLoop) {
@@ -932,16 +918,32 @@ class DatamoshLive {
 
   // ---- Display ----
 
-  show() {
-    if (this._shown) return;
+  mount(parent = document.body) {
+    if (!parent || !(parent instanceof HTMLElement)) {
+      throw new Error('DatamoshLive.mount: parent must be an HTMLElement');
+    }
+    if (this.canvas.parentNode !== parent) {
+      parent.appendChild(this.canvas);
+      this.canvas.style.position = 'absolute';
+      this.canvas.style.top = '0';
+      this.canvas.style.left = '0';
+    }
     this._shown = true;
-    document.body.appendChild(this.canvas);
+  }
+
+  unmount() {
+    if (this.canvas.parentNode) {
+      this.canvas.parentNode.removeChild(this.canvas);
+    }
+    this._shown = false;
+  }
+
+  show() {
+    this.mount();
   }
 
   hide() {
-    if (!this._shown) return;
-    this._shown = false;
-    this.canvas.parentNode?.removeChild(this.canvas);
+    this.unmount();
   }
 
   destroy() {
