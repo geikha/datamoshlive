@@ -100,7 +100,8 @@ export default class DatamoshLive {
     // If the encoder is severely backed up (more than 2× the configured fps worth of
     // frames queued), drop this frame and sync to a clean state to prevent the backlog
     // from draining all at once and causing a visual rush.
-    const overloadThreshold = Math.max(8, this._fps * QUEUE_OVERLOAD_FACTOR);
+    const effectiveFps = this._fps > 0 ? this._fps : 60;
+    const overloadThreshold = Math.max(8, effectiveFps * QUEUE_OVERLOAD_FACTOR);
     if ((this._pipeline._encoder?.encodeQueueSize ?? 0) > overloadThreshold) {
       this._pipeline.sync();
       return;
