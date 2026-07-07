@@ -9,16 +9,16 @@
  *      motion vectors paint old pixels into new positions → smearing
  *
  * drop()    — one-shot: drop next frame → auto-recover after recoverAfter frames
- * sync()    — force keyframe → deliver it → clean reference (cancels any pending drop)
+ * sync()    — force keyframe → deliver it → clean reference (cancels any pending drop or corrupt)
  * corrupt() — corrupt the next frame's payload → packet-loss style artifact
  * sample(n) — capture the next n encoded frames into a reusable buffer
  * inject()  — loop the sample buffer instead of encoding new frames
  */
 
-import { resolveParam, PARAM_CONFIG } from './params.js';
+import { resolveParam, coerceParam, PARAM_CONFIG } from './params.js';
 import { resolveCodec, getCodecString } from './codec.js';
 
-export { resolveParam, PARAM_CONFIG };
+export { resolveParam, coerceParam, PARAM_CONFIG };
 
 export default class DatamoshPipeline {
   /**
@@ -36,6 +36,7 @@ export default class DatamoshPipeline {
     this._width   = opts.width;
     this._height  = opts.height;
     this._bitrate = opts.bitrate || 1_000_000;
+    this._lastValidCodec = 'vp8'; // safe fallback in case the requested codec is invalid
     this._codec   = this._resolveCodec(opts.codec || 'vp8');
     this._lastValidCodec = this._codec;
     this._sampleBuffer = [];
@@ -211,25 +212,49 @@ export default class DatamoshPipeline {
     return new EncodedVideoChunk(init);
   }
 
+  // True if the encoder can't accept frames right now (torn down or mid-reset).
+  get isClosed() {
+    return !this._encoder || this._encoder.state === 'closed';
+  }
+
+  // True if inject() is replaying the sample buffer instead of the live feed —
+  // callers can skip capturing/encoding a live frame entirely while this holds.
+  get isInjecting() {
+    return this._injecting;
+  }
+
+  // True if the encoder's output queue exceeds threshold frames — severely backed up.
+  isOverloaded(threshold) {
+    return (this._encoder?.encodeQueueSize ?? 0) > threshold;
+  }
+
+  // Replay the next chunk from the sample buffer instead of a live frame —
+  // drives inject() playback forward by one step. Callers that already know
+  // they're injecting (e.g. to skip capturing a live frame) can call this
+  // directly instead of routing a throwaway frame through encode().
+  stepInject() {
+    if (resolveParam(this._params.hold, 'hold') || this._sampleBuffer.length === 0) return;
+    const sampleLoop = resolveParam(this._params.sampleLoop, 'sampleLoop');
+    const bufLen = this._sampleBuffer.length;
+    if (this._injectIndex >= bufLen && !sampleLoop) {
+      this._injecting = false;
+      return;
+    }
+    const chunk = this._sampleBuffer[this._injectIndex % bufLen];
+    this._injectIndex++;
+    const speed = chunk.type === 'key' ? 1 : resolveParam(this._params.speed, 'speed');
+    for (let i = 0; i < speed; i++) {
+      if (!this._decoder || this._decoder.state === 'closed') break;
+      try { this._decoder.decode(chunk); } catch (_) {}
+    }
+  }
+
   encode(frame) {
     if (!this._encoder || this._encoder.state === 'closed') return;
 
     // Inject: replay sample buffer instead of encoding the live frame.
     if (this._injecting) {
-      if (resolveParam(this._params.hold, 'hold') || this._sampleBuffer.length === 0) return;
-      const sampleLoop = resolveParam(this._params.sampleLoop, 'sampleLoop');
-      const bufLen = this._sampleBuffer.length;
-      if (this._injectIndex >= bufLen && !sampleLoop) {
-        this._injecting = false;
-        return;
-      }
-      const chunk = this._sampleBuffer[this._injectIndex % bufLen];
-      this._injectIndex++;
-      const speed = chunk.type === 'key' ? 1 : resolveParam(this._params.speed, 'speed');
-      for (let i = 0; i < speed; i++) {
-        if (!this._decoder || this._decoder.state === 'closed') break;
-        try { this._decoder.decode(chunk); } catch (_) {}
-      }
+      this.stepInject();
       return;
     }
 
@@ -238,11 +263,12 @@ export default class DatamoshPipeline {
     this._encoder.encode(frame, { keyFrame });
   }
 
-  // Force a keyframe and deliver it — cancels any pending drop, clean reference.
+  // Force a keyframe and deliver it — cancels any pending drop or corrupt, clean reference.
   sync() {
     this._nextKeyFrame        = true;
     this._deliverNextKeyFrame = true;
     this._dropNext            = false;
+    this._corruptNext         = false;
   }
 
   // Drop the next incoming frame and start recovery.

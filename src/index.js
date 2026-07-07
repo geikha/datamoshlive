@@ -7,7 +7,7 @@
  *   dm.dropRate = 0.5  // continuous probabilistic dropping (0 = off)
  */
 
-import DatamoshPipeline, { resolveParam } from './pipeline.js';
+import DatamoshPipeline, { resolveParam, coerceParam } from './pipeline.js';
 import DatamoshInput from './input.js';
 
 const DEFAULT_PARAMS = {
@@ -55,7 +55,6 @@ export default class DatamoshLive {
     this._lastFrameTime = null;
     this._fps           = 30;
     this._frameInterval = 1000 / 30;
-    this._frameCount    = 0;
 
     this.params = { ...DEFAULT_PARAMS, ...(opts.params || {}) };
     if (this.params.recoverAfter == null) {
@@ -97,22 +96,28 @@ export default class DatamoshLive {
       return;
     }
 
+    // inject() replays the sample buffer instead of the live feed — step the
+    // replay directly, skipping the capture/VideoFrame allocation the live
+    // path needs (it would just be discarded unused).
+    if (this._pipeline.isInjecting) {
+      this._pipeline.stepInject();
+      return;
+    }
+
     // If the encoder is severely backed up (more than 2× the configured fps worth of
     // frames queued), drop this frame and sync to a clean state to prevent the backlog
     // from draining all at once and causing a visual rush.
     const effectiveFps = this._fps > 0 ? this._fps : 60;
     const overloadThreshold = Math.max(8, effectiveFps * QUEUE_OVERLOAD_FACTOR);
-    if ((this._pipeline._encoder?.encodeQueueSize ?? 0) > overloadThreshold) {
+    if (this._pipeline.isOverloaded(overloadThreshold)) {
       this._pipeline.sync();
       return;
     }
 
-    this._frameCount++;
+    if (this._pipeline.isClosed) return;
 
     const drawn = this._input.capture(this._offscreenCtx, this.width, this.height);
     if (!drawn) return;
-
-    if (this._pipeline._encoder?.state === 'closed') return;
 
     let frame;
     try {
@@ -181,7 +186,6 @@ export default class DatamoshLive {
         const onLoadedData = () => {
           cleanup();
           this._input.setCamera(video, stream);
-          this._frameCount = 0;
           this._pipeline.reset();
           if (opts.autoStart !== false) this.start();
           resolve(video);
@@ -219,7 +223,6 @@ export default class DatamoshLive {
           video.addEventListener('loadeddata', () => {
             this._input.setVideo(video);
             video.play().catch(() => {});
-            this._frameCount = 0;
             this._pipeline.reset();
             if (opts.autoStart !== false) this.start();
             resolve();
@@ -229,7 +232,6 @@ export default class DatamoshLive {
         });
       } else {
         this._input.setVideo(source);
-        this._frameCount = 0;
         this._pipeline.reset();
         if (opts.autoStart !== false) this.start();
       }
@@ -241,7 +243,6 @@ export default class DatamoshLive {
   async initCanvas(canvas, opts = {}) {
     try {
       this._input.setCanvas(canvas);
-      this._frameCount = 0;
       this._pipeline.reset();
       if (opts.autoStart !== false) this.start();
     } catch (err) {
@@ -255,12 +256,17 @@ export default class DatamoshLive {
     return resolveParam(this.params[name], name);
   }
 
+  // Single write path for every param: coerces plain values against PARAM_CONFIG
+  // (type, bounds, defaults) while leaving live function values untouched, so
+  // this.params always holds either a valid value or a valid live resolver —
+  // never the kind of out-of-range value a caller could read back and be misled by.
   setParam(name, value) {
     if (!(name in this.params)) console.warn(`DatamoshLive: unknown param "${name}"`);
-    this.params[name] = value;
-    if (name === 'bitrate') this._pipeline.reset(null, null, value);
+    const resolved = typeof value === 'function' ? value : coerceParam(value, name);
+    this.params[name] = resolved;
+    if (name === 'bitrate') this._pipeline.reset(null, null, resolved);
     if (name === 'codec') {
-      this._pipeline.reset(null, null, null, value);
+      this._pipeline.reset(null, null, null, resolved);
       this._pipeline.sync(); // deliver a clean keyframe immediately after codec switch
     }
   }
@@ -270,12 +276,13 @@ export default class DatamoshLive {
   }
 
   get speed()          { return this.params.speed; }
-  set speed(v)         { this.params.speed = v; }
+  set speed(v)         { this.setParam('speed', v); }
 
   get enabled()        { return this.params.enabled; }
   set enabled(v) {
-    if (v && !this.params.enabled) this._pipeline.sync();
-    this.params.enabled = v;
+    const wasEnabled = resolveParam(this.params.enabled, 'enabled');
+    this.setParam('enabled', v);
+    if (resolveParam(this.params.enabled, 'enabled') && !wasEnabled) this._pipeline.sync();
   }
 
   /**
@@ -283,38 +290,38 @@ export default class DatamoshLive {
    * Set to 0 to disable continuous dropping.
    */
   get dropRate()       { return this.params.dropRate; }
-  set dropRate(v)      { this.params.dropRate = Math.max(0, Math.min(1, v)); }
+  set dropRate(v)      { this.setParam('dropRate', v); }
 
   /**
    * Probability (0–1) that any incoming frame is corrupted each cycle.
    * Set to 0 to disable continuous corruption.
    */
   get corruptRate()    { return this.params.corruptRate; }
-  set corruptRate(v)   { this.params.corruptRate = Math.max(0, Math.min(1, v)); }
+  set corruptRate(v)   { this.setParam('corruptRate', v); }
 
   get corruptAmount()  { return this.params.corruptAmount; }
-  set corruptAmount(v) { this.params.corruptAmount = Math.max(0, Math.min(1, v)); }
+  set corruptAmount(v) { this.setParam('corruptAmount', v); }
 
   get hold()           { return this.params.hold; }
-  set hold(v)          { this.params.hold = v; }
+  set hold(v)          { this.setParam('hold', v); }
 
   get recover()        { return this.params.recover; }
-  set recover(v)       { this.params.recover = v; }
+  set recover(v)       { this.setParam('recover', v); }
 
   get recoverAfter()   { return this.params.recoverAfter; }
-  set recoverAfter(v)  { this.params.recoverAfter = v; }
+  set recoverAfter(v)  { this.setParam('recoverAfter', v); }
 
   get sampleFrames()   { return this.params.sampleFrames; }
   set sampleFrames(v) {
-    const n = Math.max(1, Math.round(Number(v) || 1));
+    const n = coerceParam(v, 'sampleFrames');
     if (n !== this.params.sampleFrames) {
       this._pipeline.stopInject();
-      this.params.sampleFrames = n;
+      this.setParam('sampleFrames', n);
     }
   }
 
   get sampleLoop()     { return this.params.sampleLoop; }
-  set sampleLoop(v)    { this.params.sampleLoop = !!v; }
+  set sampleLoop(v)    { this.setParam('sampleLoop', v); }
 
   get bitrate()        { return this.params.bitrate; }
   set bitrate(v)       { this.setParam('bitrate', v); }

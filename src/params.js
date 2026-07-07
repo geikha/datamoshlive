@@ -14,12 +14,10 @@ export const PARAM_CONFIG = {
   codec:         { default: 'vp8',     type: 'string' },
 };
 
-// Resolve a parameter value: call if function, apply type coercion, bounds, defaults.
-export function resolveParam(paramValue, configKey) {
+// Apply type coercion, bounds, and defaults to an already-resolved (non-function) value.
+export function coerceParam(value, configKey) {
   const config = PARAM_CONFIG[configKey];
-  if (!config) return paramValue;
-
-  let value = typeof paramValue === 'function' ? paramValue() : paramValue;
+  if (!config) return value;
 
   if (value === undefined || (typeof value === 'number' && !Number.isFinite(value))) {
     value = config.default;
@@ -36,4 +34,10 @@ export function resolveParam(paramValue, configKey) {
   }
 
   return value;
+}
+
+// Resolve a parameter value: call if function, then apply coerceParam.
+export function resolveParam(paramValue, configKey) {
+  const value = typeof paramValue === 'function' ? paramValue() : paramValue;
+  return coerceParam(value, configKey);
 }

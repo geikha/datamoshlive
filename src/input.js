@@ -9,9 +9,6 @@ function drawFit(ctx, source, cw, ch, fit) {
   const sh = source.videoHeight || source.naturalHeight || source.height;
   if (!sw || !sh) return false;
 
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, cw, ch);
-
   let dx, dy, dw, dh;
   const sa = sw / sh;
   const ta = cw / ch;
@@ -32,6 +29,11 @@ function drawFit(ctx, source, cw, ch, fit) {
       else         { dh = ch; dw = dh * sa; }
       dx = (cw - dw) / 2;
       dy = (ch - dh) / 2;
+      // Letterboxed: the image won't cover the full canvas, so paint the bars.
+      if (dw < cw || dh < ch) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, cw, ch);
+      }
       break;
   }
 
